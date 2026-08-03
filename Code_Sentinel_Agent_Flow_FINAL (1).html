@@ -1,0 +1,1812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code Sentinel — Agent Flow</title>
+  <meta name="description" content="Code Sentinel Agent Flow — a running multi-agent trust pipeline that turns risky commits into verified trusted commits." />
+  <style>
+/* =====================================================================
+   Code Sentinel — Agent Flow
+   Premium enterprise security dashboard theme
+   All colors are CSS variables; edit :root to re-skin the whole demo.
+   ===================================================================== */
+
+:root {
+  /* --- Surfaces --- */
+  --bg:            #060912;   /* deep navy / near-black */
+  --bg-grid:       #0c1322;   /* faint grid lines */
+  --surface:       #0e1626;   /* card base */
+  --surface-2:     #141f33;   /* raised card */
+  --surface-3:     #1b2942;   /* hover / active */
+  --border:        #22304c;   /* hairline borders */
+  --border-soft:   #1a2438;
+
+  /* --- Semantic trust colors --- */
+  --risk:      #f5a524;   /* amber  — risky / untrusted */
+  --risk-dim:  #7a5410;
+  --run:       #38bdf8;   /* cyan   — analysis / running */
+  --run-dim:   #164a63;
+  --trust:     #34d399;   /* green  — verified / approved */
+  --trust-dim: #125340;
+  --crit:      #fb5a6f;   /* red    — critical / malicious */
+  --crit-dim:  #5c1f2b;
+
+  /* --- Branch accent hues (each intelligence lane its own tint) --- */
+  --sec:  #fb7185;   /* security intelligence — rose */
+  --qual: #56b6ff;   /* quality intelligence  — sky  */
+  --orig: #b48bff;   /* originality intelligence — violet */
+
+  /* --- Text --- */
+  --ink:        #eef3fb;
+  --ink-soft:   #aab7cd;
+  --ink-mute:   #6b7a94;
+
+  /* --- Type --- */
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
+
+  /* --- Motion --- */
+  --ease: cubic-bezier(.4, .1, .2, 1);
+  --dur:  .5s;
+
+  /* --- Sizing (scaled up in presentation mode) --- */
+  --node-scale: 1;
+  --canvas-h: 600px;
+}
+
+/* ---------- reset ---------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 700px at 78% -10%, rgba(52,211,153,.06), transparent 60%),
+    radial-gradient(900px 600px at 8% 110%, rgba(245,165,36,.05), transparent 55%),
+    linear-gradient(180deg, #070b16, var(--bg));
+  background-attachment: fixed;
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.4;
+}
+button { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--run); outline-offset: 2px; border-radius: 6px; }
+
+/* =====================================================================
+   TOP BAR
+   ===================================================================== */
+.topbar {
+  display: grid;
+  grid-template-columns: minmax(210px, 300px) 1fr auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 26px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(14,22,38,.9), rgba(9,14,24,.75));
+  backdrop-filter: blur(8px);
+  position: sticky; top: 0; z-index: 40;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand__mark {
+  width: 42px; height: 42px; flex: 0 0 42px;
+  border-radius: 11px;
+  display: grid; place-items: center;
+  background: linear-gradient(145deg, #10203a, #0a1424);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 0 0 1px rgba(56,189,248,.08), 0 0 24px rgba(52,211,153,.14);
+  position: relative;
+}
+.brand__mark svg { width: 24px; height: 24px; }
+.brand__name { font-weight: 700; letter-spacing: .2px; font-size: 15px; }
+.brand__eyebrow {
+  font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--ink-mute); font-weight: 600; margin-top: 2px;
+}
+
+.titles { text-align: center; }
+.titles h1 {
+  font-size: clamp(16px, 2vw, 22px); font-weight: 750; letter-spacing: -.2px;
+}
+.titles .sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 1px; }
+.titles .hero {
+  font-size: 11px; color: var(--trust); font-weight: 600; letter-spacing: .3px;
+  margin-top: 3px;
+}
+.titles .hero b { color: var(--risk); font-weight: 600; }
+
+/* ---------- controls ---------- */
+.controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 15px; border-radius: 9px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .2px;
+  color: var(--ink); cursor: pointer;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  transition: transform .12s var(--ease), background .2s, border-color .2s, box-shadow .2s;
+}
+.btn:hover { background: var(--surface-3); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.btn .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.btn--primary {
+  color: #04140d; background: linear-gradient(135deg, #4ade80, var(--trust));
+  border-color: transparent;
+  box-shadow: 0 0 0 1px rgba(52,211,153,.4), 0 8px 22px -8px rgba(52,211,153,.6);
+}
+.btn--primary:hover { box-shadow: 0 0 0 1px rgba(52,211,153,.6), 0 10px 26px -8px rgba(52,211,153,.7); }
+.btn--ghost { background: transparent; }
+
+/* segmented speed control */
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.seg button {
+  border: 0; background: transparent; color: var(--ink-mute);
+  font-size: 11.5px; font-weight: 600; padding: 6px 11px; border-radius: 7px; cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.seg button[aria-pressed="true"] { background: var(--surface-3); color: var(--run); }
+.seg__label { font-size: 10px; color: var(--ink-mute); letter-spacing: 1px; text-transform: uppercase; align-self: center; margin-right: 2px; }
+
+/* toggle */
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 600; color: var(--ink-soft); cursor: pointer; user-select: none; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle .track { width: 38px; height: 21px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--border); position: relative; transition: background .2s; }
+.toggle .track::after { content:''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--ink-mute); transition: transform .2s var(--ease), background .2s; }
+.toggle input:checked + .track { background: rgba(52,211,153,.25); border-color: var(--trust); }
+.toggle input:checked + .track::after { transform: translateX(17px); background: var(--trust); }
+
+/* =====================================================================
+   STAGE LAYOUT
+   ===================================================================== */
+.stage {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr) 296px;
+  gap: 16px;
+  padding: 16px 20px 22px;
+  align-items: start;
+}
+.rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 82px; }
+
+.panel {
+  background: linear-gradient(180deg, var(--surface), #0b1220);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+}
+.panel__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.panel__title { font-size: 11px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--ink-mute); font-weight: 700; }
+.panel__tag { font-size: 10px; color: var(--ink-mute); font-family: var(--mono); }
+
+/* =====================================================================
+   STATUS PANEL
+   ===================================================================== */
+.status__agent {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px; border-radius: 11px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.status__pulse {
+  width: 34px; height: 34px; flex: 0 0 34px; border-radius: 9px;
+  display: grid; place-items: center; position: relative;
+  background: var(--surface-3); color: var(--ink-mute);
+  transition: color .3s, background .3s;
+}
+.status__pulse svg { width: 18px; height: 18px; }
+.status--running .status__pulse { color: var(--run); background: var(--run-dim); }
+.status--done .status__pulse { color: var(--trust); background: var(--trust-dim); }
+.status--running .status__pulse::after {
+  content:''; position: absolute; inset: -4px; border-radius: 11px;
+  border: 2px solid var(--run); opacity: .5; animation: ring 1.4s var(--ease) infinite;
+}
+.status__meta { min-width: 0; }
+.status__name { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status__state { font-size: 11px; color: var(--ink-soft); margin-top: 1px; }
+.status--running .status__state { color: var(--run); }
+.status--done .status__state { color: var(--trust); }
+
+.progress__row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.progress__label { font-size: 11px; color: var(--ink-mute); letter-spacing: .5px; }
+.progress__pct { font-size: 14px; font-weight: 700; font-family: var(--mono); color: var(--run); }
+.progress__bar { height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.progress__fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--run), var(--trust));
+  border-radius: 999px; transition: width .5s var(--ease);
+  box-shadow: 0 0 12px rgba(56,189,248,.5);
+}
+
+/* =====================================================================
+   TRUST GAUGE
+   ===================================================================== */
+.gauge { display: flex; align-items: center; gap: 14px; }
+.gauge__ring { position: relative; width: 96px; height: 96px; flex: 0 0 96px; }
+.gauge__ring svg { transform: rotate(-90deg); }
+.gauge__track { stroke: var(--surface-3); }
+.gauge__arc { stroke: var(--risk); stroke-linecap: round; transition: stroke-dashoffset .8s var(--ease), stroke .8s var(--ease); filter: drop-shadow(0 0 6px currentColor); }
+.gauge__val { position: absolute; inset: 0; display: grid; place-items: center; flex-direction: column; text-align: center; }
+.gauge__num { font-size: 26px; font-weight: 800; font-family: var(--mono); line-height: 1; }
+.gauge__den { font-size: 10px; color: var(--ink-mute); font-family: var(--mono); }
+.gauge__side { min-width: 0; }
+.gauge__status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: .4px;
+  padding: 5px 10px; border-radius: 999px;
+  background: var(--risk-dim); color: var(--risk);
+  transition: background .5s, color .5s;
+}
+.gauge__status .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.gauge__delta { font-size: 11px; color: var(--ink-soft); margin-top: 8px; font-family: var(--mono); }
+.gauge__delta b { color: var(--trust); }
+
+/* =====================================================================
+   CONTRIBUTOR PANEL
+   ===================================================================== */
+.contrib__id { display: flex; align-items: center; gap: 11px; margin-bottom: 13px; }
+.contrib__avatar {
+  width: 38px; height: 38px; flex: 0 0 38px; border-radius: 10px; display: grid; place-items: center;
+  font-weight: 800; font-size: 14px; color: var(--trust);
+  background: linear-gradient(145deg, #12351f, #0d2118); border: 1px solid var(--trust-dim);
+}
+.contrib__handle { font-size: 13.5px; font-weight: 700; font-family: var(--mono); }
+.contrib__role { font-size: 10.5px; color: var(--ink-mute); }
+.contrib__score { margin-left: auto; text-align: right; }
+.contrib__score .n { font-size: 18px; font-weight: 800; font-family: var(--mono); color: var(--risk); transition: color .5s; }
+.contrib__score.up .n { color: var(--trust); }
+.contrib__score .lbl { font-size: 9px; color: var(--ink-mute); letter-spacing: 1px; text-transform: uppercase; }
+
+.dims { display: grid; gap: 8px; }
+.dim { display: grid; grid-template-columns: 74px 1fr 30px; align-items: center; gap: 8px; }
+.dim__name { font-size: 10.5px; color: var(--ink-soft); }
+.dim__bar { height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.dim__fill { height: 100%; width: 0%; border-radius: 999px; transition: width 1s var(--ease), background 1s; background: var(--run); }
+.dim__val { font-size: 10px; font-family: var(--mono); color: var(--ink-mute); text-align: right; }
+/* good = high value good (green); risk = high value bad (amber) */
+.dim[data-kind="good"] .dim__fill { background: linear-gradient(90deg, var(--run), var(--trust)); }
+.dim[data-kind="risk"] .dim__fill { background: linear-gradient(90deg, var(--risk), var(--crit)); }
+
+/* =====================================================================
+   CANVAS + GRAPH
+   ===================================================================== */
+.canvas-wrap { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.canvas {
+  position: relative;
+  height: var(--canvas-h);
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0 / 34px 34px,
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0 / 34px 34px,
+    radial-gradient(120% 120% at 30% 40%, #0c1524, #070c16);
+  overflow: hidden;
+}
+.canvas::after { /* subtle vignette */
+  content:''; position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 90px rgba(0,0,0,.55);
+  border-radius: 18px;
+}
+.edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.edges path { fill: none; stroke: var(--border); stroke-width: 2; transition: stroke .5s, opacity .5s; }
+.edges path.active { stroke: var(--run); stroke-width: 2.5; filter: drop-shadow(0 0 5px var(--run)); }
+.edges path.done { stroke: var(--trust-dim); }
+.edges path.flow { stroke-dasharray: 7 9; animation: dash 1s linear infinite; }
+.edges path.retry { stroke: var(--risk-dim); stroke-dasharray: 3 6; stroke-width: 1.6; }
+
+.nodes { position: absolute; inset: 0; z-index: 2; }
+
+/* ---------- node ---------- */
+.node {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(var(--node-scale));
+  width: 106px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--border);
+  transition: border-color .35s, box-shadow .35s, transform .35s var(--ease), background .35s;
+  z-index: 2;
+}
+.node__top { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+.node__icon {
+  width: 24px; height: 24px; flex: 0 0 24px; border-radius: 7px; display: grid; place-items: center;
+  background: var(--surface-3); color: var(--ink-mute); position: relative; transition: color .35s, background .35s;
+}
+.node__icon svg { width: 14px; height: 14px; }
+.node__label { font-size: 11px; font-weight: 700; letter-spacing: -.1px; line-height: 1.15; }
+.node__sub { font-size: 8.5px; color: var(--ink-mute); line-height: 1.25; }
+.node__badge {
+  display: none; position: absolute; top: -8px; right: -6px;
+  font-size: 9px; font-weight: 700; letter-spacing: .3px;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+/* big anchor nodes */
+.node--big { width: 122px; padding: 11px 12px; border-radius: 15px; }
+.node--big .node__label { font-size: 12.5px; }
+.node--big .node__icon { width: 28px; height: 28px; flex-basis: 28px; }
+/* hub width set in poster-layout block below */
+/* terminal 'Verified Commit' node — prominent without extra width */
+.node--goal { border-color: var(--trust-dim); }
+.node--goal .node__label { font-size: 12px; }
+
+/* --- node states --- */
+.node[data-state="running"] {
+  border-color: var(--run);
+  box-shadow: 0 0 0 1px var(--run), 0 0 28px -4px var(--run), 0 10px 30px -14px #000;
+  transform: translate(-50%, -50%) scale(calc(var(--node-scale) * 1.06));
+}
+.node[data-state="running"] .node__icon { color: var(--run); background: var(--run-dim); }
+.node[data-state="running"] .node__icon::after {
+  content:''; position: absolute; inset: -5px; border-radius: 11px; border: 2px solid var(--run);
+  opacity: .55; animation: ring 1.3s var(--ease) infinite;
+}
+.node[data-state="done"] { border-color: var(--trust-dim); background: linear-gradient(180deg, #0d1d20, var(--surface)); }
+.node[data-state="done"] .node__icon { color: var(--trust); background: var(--trust-dim); }
+.node[data-state="done"] .node__badge { display: inline-flex; background: var(--trust-dim); color: var(--trust); border-color: rgba(52,211,153,.4); }
+.node[data-state="done"] .node__badge::before { content: '✓ '; }
+
+.node[data-state="warn"] {
+  border-color: var(--risk);
+  box-shadow: 0 0 0 1px var(--risk-dim), 0 0 22px -6px var(--risk);
+}
+.node[data-state="warn"] .node__icon { color: var(--risk); background: var(--risk-dim); }
+.node[data-state="warn"] .node__badge { display: inline-flex; background: var(--risk-dim); color: var(--risk); border-color: rgba(245,165,36,.4); }
+
+.node[data-state="wait"] { border-color: var(--risk); }
+.node[data-state="wait"] .node__icon { color: var(--risk); background: var(--risk-dim); }
+.node[data-state="wait"] .node__icon::after {
+  content:''; position: absolute; inset: -5px; border-radius: 11px; border: 2px dashed var(--risk);
+  animation: spin-slow 3s linear infinite; opacity: .7;
+}
+
+/* anchor node identity colors when idle */
+.node#node-risky { border-color: var(--risk-dim); }
+.node#node-risky .node__icon { color: var(--risk); }
+.node#node-verified .node__icon { color: var(--trust); }
+
+/* verified final glow */
+.node#node-verified[data-state="done"] {
+  border-color: var(--trust);
+  box-shadow: 0 0 0 1px var(--trust), 0 0 40px -2px var(--trust);
+  animation: trust-breathe 2.6s var(--ease) infinite;
+}
+
+/* branch lane tint chips */
+.node[data-lane="sec"][data-state="running"] { border-color: var(--sec); box-shadow: 0 0 0 1px var(--sec), 0 0 26px -6px var(--sec); }
+.node[data-lane="sec"][data-state="running"] .node__icon { color: var(--sec); background: rgba(251,113,133,.14); }
+.node[data-lane="qual"][data-state="running"] { border-color: var(--qual); box-shadow: 0 0 0 1px var(--qual), 0 0 26px -6px var(--qual); }
+.node[data-lane="qual"][data-state="running"] .node__icon { color: var(--qual); background: rgba(86,182,255,.14); }
+.node[data-lane="orig"][data-state="running"] { border-color: var(--orig); box-shadow: 0 0 0 1px var(--orig), 0 0 26px -6px var(--orig); }
+.node[data-lane="orig"][data-state="running"] .node__icon { color: var(--orig); background: rgba(180,139,255,.14); }
+
+/* lane labels */
+.lane-label {
+  position: absolute; transform: translate(-50%,-50%); z-index: 2;
+  font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase; font-weight: 700;
+  color: var(--ink-mute); white-space: nowrap;
+  padding: 3px 8px; border-radius: 6px; background: rgba(9,14,24,.6); border: 1px solid var(--border-soft);
+}
+
+/* retry loop label */
+.retry-label {
+  position: absolute; transform: translate(-50%,-50%); z-index: 3;
+  font-size: 9px; letter-spacing: .5px; font-weight: 600; color: var(--risk);
+  background: rgba(9,14,24,.85); padding: 2px 7px; border-radius: 6px; border: 1px dashed var(--risk-dim);
+  white-space: nowrap;
+}
+
+/* ---------- the travelling commit token ---------- */
+.token {
+  position: absolute; z-index: 5;
+  width: 13px; height: 13px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 35% 35%, #fff, var(--risk) 55%, transparent 72%);
+  box-shadow: 0 0 12px 2px var(--risk);
+  opacity: 0; transition: opacity .4s, background .8s, box-shadow .8s;
+  pointer-events: none;
+}
+.token.visible { opacity: 1; }
+.token.phase-run { background: radial-gradient(circle at 35% 35%, #fff, var(--run) 55%, transparent 72%); box-shadow: 0 0 12px 2px var(--run); }
+.token.phase-trust { background: radial-gradient(circle at 35% 35%, #fff, var(--trust) 55%, transparent 72%); box-shadow: 0 0 14px 3px var(--trust); }
+.token::after { content:''; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid currentColor; opacity: .3; }
+
+/* punchline under canvas */
+.punchline {
+  font-size: 12.5px; color: var(--ink-soft); text-align: center; padding: 2px 12px;
+}
+.punchline b { color: var(--ink); font-weight: 700; }
+
+/* =====================================================================
+   LOG + EVIDENCE (right rail)
+   ===================================================================== */
+.log__stream {
+  height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px;
+  font-family: var(--mono); font-size: 11px; padding-right: 4px;
+  scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent;
+}
+.log__stream::-webkit-scrollbar { width: 7px; }
+.log__stream::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 6px; }
+.log__line { display: flex; gap: 8px; opacity: 0; animation: rise .35s var(--ease) forwards; }
+.log__time { color: var(--run); flex: 0 0 auto; }
+.log__msg { color: var(--ink-soft); }
+.log__line.warn .log__msg { color: var(--risk); }
+.log__line.good .log__msg { color: var(--trust); }
+
+.evidence__list { display: flex; flex-direction: column; gap: 9px; max-height: 300px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent; padding-right: 4px; }
+.evidence__list::-webkit-scrollbar { width: 7px; }
+.evidence__list::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 6px; }
+.evidence__empty { font-size: 11px; color: var(--ink-mute); font-style: italic; padding: 6px 2px; }
+
+.ev-card {
+  border-radius: 11px; padding: 10px 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--run);
+  opacity: 0; transform: translateY(8px); animation: rise .45s var(--ease) forwards;
+}
+.ev-card.sec { border-left-color: var(--sec); }
+.ev-card.crit { border-left-color: var(--crit); }
+.ev-card.qual { border-left-color: var(--qual); }
+.ev-card.orig { border-left-color: var(--orig); }
+.ev-card.trust { border-left-color: var(--trust); }
+.ev-card__head { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+.ev-card__tag { font-size: 9px; letter-spacing: .8px; text-transform: uppercase; font-weight: 700; color: var(--ink-mute); }
+.ev-card__title { font-size: 12px; font-weight: 700; }
+.ev-card__body { font-size: 11px; color: var(--ink-soft); line-height: 1.4; }
+.ev-card__body code { font-family: var(--mono); font-size: 10.5px; color: var(--risk); }
+
+/* docker terminal */
+.terminal {
+  font-family: var(--mono); font-size: 11px; line-height: 1.65;
+  background: #05080f; border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; color: var(--ink-soft);
+}
+.terminal__bar { display: flex; gap: 6px; margin-bottom: 8px; }
+.terminal__bar span { width: 9px; height: 9px; border-radius: 50%; background: var(--surface-3); }
+.terminal__bar span:nth-child(1){ background:#f5655f; } .terminal__bar span:nth-child(2){ background:#f5b83d; } .terminal__bar span:nth-child(3){ background:#3ecf7e; }
+.terminal__line { white-space: pre-wrap; }
+.terminal__line.ok { color: var(--trust); }
+.terminal__line .prompt { color: var(--run); }
+.term-caret { display: inline-block; width: 7px; background: var(--trust); animation: blink 1s step-end infinite; }
+
+/* =====================================================================
+   FINAL BANNER
+   ===================================================================== */
+.finale {
+  position: fixed; inset: 0; z-index: 60; display: none; place-items: center;
+  background: radial-gradient(circle at 50% 45%, rgba(52,211,153,.14), rgba(4,8,16,.86) 60%);
+  backdrop-filter: blur(3px);
+}
+.finale.show { display: grid; animation: fade .5s var(--ease); }
+.finale__card {
+  text-align: center; padding: 40px 54px; border-radius: 22px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--trust);
+  box-shadow: 0 0 60px -10px var(--trust);
+  animation: rise .6s var(--ease);
+}
+.finale__check { width: 64px; height: 64px; margin: 0 auto 16px; color: var(--trust); }
+.finale__title { font-size: 26px; font-weight: 800; letter-spacing: -.4px; }
+.finale__sub { font-size: 14px; color: var(--ink-soft); margin-top: 8px; max-width: 440px; }
+.finale__score { font-family: var(--mono); font-size: 13px; color: var(--trust); margin-top: 16px; font-weight: 700; }
+.finale__close { margin-top: 22px; }
+
+/* =====================================================================
+   ANIMATIONS
+   ===================================================================== */
+@keyframes ring { 0%{ transform: scale(.9); opacity:.6 } 70%{ transform: scale(1.18); opacity:0 } 100%{ opacity:0 } }
+@keyframes dash { to { stroke-dashoffset: -32; } }
+@keyframes rise { from { opacity:0; transform: translateY(8px);} to { opacity:1; transform: translateY(0);} }
+@keyframes fade { from { opacity:0 } to { opacity:1 } }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+@keyframes trust-breathe { 0%,100%{ box-shadow: 0 0 0 1px var(--trust), 0 0 30px -6px var(--trust);} 50%{ box-shadow: 0 0 0 1px var(--trust), 0 0 46px 0 var(--trust);} }
+
+/* =====================================================================
+   PRESENTATION MODE
+   ===================================================================== */
+body.present { --canvas-h: 640px; --dur: .8s; }
+body.present .titles .sub,
+body.present .brand__eyebrow { display: none; }
+body.present .titles h1 { font-size: 24px; }
+body.present [data-extra] { display: none !important; }
+body.present .node__label { font-size: 12px; }
+body.present .node--big .node__label { font-size: 13.5px; }
+body.present .log__stream { height: 220px; }
+body.present .stage { grid-template-columns: 236px minmax(0,1fr) 286px; }
+
+/* =====================================================================
+   RESPONSIVE  (node scale is computed in JS from canvas width)
+   ===================================================================== */
+@media (max-width: 1180px) {
+  .stage { grid-template-columns: 240px minmax(0,1fr); }
+  .rail--right { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; position: static; }
+  .rail--right .panel { flex: 1 1 300px; }
+}
+@media (max-width: 860px) {
+  .topbar { grid-template-columns: 1fr; text-align: center; }
+  .brand, .controls { justify-content: center; }
+  .titles { order: -1; }
+  .stage { grid-template-columns: 1fr; }
+  .rail { position: static; }
+  .canvas { height: 460px; overflow: auto; }
+  .node { width: 118px; }
+}
+
+/* =====================================================================
+   METRIC STRIP
+   ===================================================================== */
+.metrics {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  padding: 10px 20px; margin: 0 20px; 
+  border: 1px solid var(--border); border-radius: 14px;
+  background: linear-gradient(180deg, var(--surface), #0b1220);
+}
+.metric {
+  flex: 1 1 120px; display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 12px; border-radius: 10px; background: rgba(13,20,34,.5);
+  border: 1px solid var(--border-soft); min-width: 0;
+}
+.metric__label { font-size: 9.5px; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-mute); font-weight: 700; white-space: nowrap; }
+.metric__val { font-size: 20px; font-weight: 800; letter-spacing: -.5px; font-variant-numeric: tabular-nums; color: var(--ink); transition: color .4s; }
+.metric__val.warn { color: var(--risk); }
+
+/* =====================================================================
+   AGGREGATOR (merge) NODE + pulse
+   ===================================================================== */
+.node--merge { width: 108px; border-color: var(--run-dim); background: linear-gradient(180deg, #0f2233, var(--surface)); }
+.node--merge .node__icon { color: var(--run); background: var(--run-dim); }
+.node.pulse { box-shadow: 0 0 0 1px var(--run), 0 0 34px -2px var(--run); }
+
+/* =====================================================================
+   BRANCH EXECUTION PANEL
+   ===================================================================== */
+.panel--branches .branch {
+  border: 1px solid var(--border-soft); border-radius: 11px; padding: 9px 11px; margin-top: 8px;
+  background: rgba(13,20,34,.45); transition: border-color .35s, background .35s;
+}
+.panel--branches .branch:first-of-type { margin-top: 10px; }
+.branch[data-state="run"]      { border-color: var(--run);  background: rgba(22,74,99,.25); }
+.branch[data-state="evidence"] { border-color: var(--run); }
+.branch[data-state="done"]     { border-color: var(--trust-dim); background: rgba(18,83,64,.2); }
+.branch__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.branch__name { font-size: 12px; font-weight: 700; }
+.branch__nodes { font-size: 10px; color: var(--ink-mute); margin-top: 3px; }
+.branch__pill {
+  font-size: 9px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  color: var(--ink-mute); background: var(--surface-3); border: 1px solid var(--border);
+}
+.branch__pill.run      { color: var(--run);   background: var(--run-dim);   border-color: rgba(56,189,248,.4); }
+.branch__pill.evidence { color: var(--run);   background: var(--run-dim);   border-color: rgba(56,189,248,.55); }
+.branch__pill.done     { color: var(--trust); background: var(--trust-dim); border-color: rgba(52,211,153,.5); }
+.branch__pill.done::before { content: '✓ '; }
+
+/* =====================================================================
+   EVIDENCE TRAIL TIMELINE
+   ===================================================================== */
+.timeline { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; padding: 2px 2px; }
+.tl {
+  display: inline-flex; align-items: center; gap: 6px; flex: 1 1 auto; justify-content: center;
+  font-size: 10px; font-weight: 700; letter-spacing: .2px; color: var(--ink-mute);
+  padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border-soft);
+  background: rgba(13,20,34,.4); white-space: nowrap; transition: color .4s, border-color .4s, background .4s;
+}
+.tl__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-mute); transition: background .4s, box-shadow .4s; }
+.tl.done { color: var(--trust); border-color: var(--trust-dim); }
+.tl.done .tl__dot { background: var(--trust); }
+.tl.active { color: var(--run); border-color: var(--run); background: var(--run-dim); }
+.tl.active .tl__dot { background: var(--run); box-shadow: 0 0 8px var(--run); }
+
+/* =====================================================================
+   NARRATION CAPTION (over canvas)
+   ===================================================================== */
+.caption {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  z-index: 6; max-width: 82%; text-align: center;
+  padding: 8px 16px; border-radius: 999px;
+  background: rgba(8,13,22,.82); border: 1px solid var(--border);
+  color: var(--ink-soft); font-size: 12.5px; font-weight: 600; letter-spacing: .1px;
+  backdrop-filter: blur(6px); box-shadow: 0 10px 30px -16px #000;
+}
+.caption #caption-text { background: linear-gradient(90deg, var(--ink), var(--ink-soft)); -webkit-background-clip: text; }
+
+/* =====================================================================
+   FLOATING COMMENT BUBBLES
+   ===================================================================== */
+.bubbles { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.bubble {
+  position: absolute; transform: translate(-50%, -135%) scale(.96);
+  max-width: 190px; padding: 7px 11px; border-radius: 11px;
+  background: rgba(15,25,42,.95); border: 1px solid var(--run-dim);
+  color: var(--ink-soft); font-size: 11px; line-height: 1.3; font-weight: 500;
+  box-shadow: 0 12px 30px -14px #000; opacity: 0; transition: opacity .3s, transform .3s var(--ease);
+}
+.bubble.show { opacity: 1; transform: translate(-50%, -140%) scale(1); }
+.bubble::after {
+  content: ''; position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%) rotate(45deg);
+  width: 9px; height: 9px; background: rgba(15,25,42,.95); border-right: 1px solid var(--run-dim); border-bottom: 1px solid var(--run-dim);
+}
+
+/* ghost branch tokens (parallel execution) */
+.ghost {
+  position: absolute; z-index: 5; width: 11px; height: 11px; border-radius: 50%;
+  transform: translate(-50%, -50%); opacity: 0; pointer-events: none;
+  background: radial-gradient(circle at 35% 35%, #fff, var(--run) 55%, transparent 72%);
+  box-shadow: 0 0 10px 2px var(--run); transition: opacity .35s;
+}
+.ghost.visible { opacity: .95; }
+
+/* =====================================================================
+   RISK-REDUCED LABEL
+   ===================================================================== */
+.risk-reduced {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  padding: 7px 10px; border-radius: 10px;
+  background: rgba(18,83,64,.18); border: 1px solid var(--trust-dim);
+}
+.risk-reduced__k { font-size: 9.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: var(--trust); white-space: nowrap; }
+.risk-reduced__v { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; }
+.risk-reduced.flash { animation: riskflash .7s var(--ease); }
+@keyframes riskflash { 0% { background: rgba(52,211,153,.32); } 100% { background: rgba(18,83,64,.18); } }
+
+/* contributor status pill */
+.panel__tag.trusted { color: var(--trust); background: var(--trust-dim); border-color: rgba(52,211,153,.4); }
+.panel__tag { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-3); font-size: 9.5px; font-weight: 800; letter-spacing: .5px; }
+
+/* =====================================================================
+   HUMAN-IN-THE-LOOP MODAL
+   ===================================================================== */
+.hitl {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+  background: rgba(4,8,15,.7); backdrop-filter: blur(4px);
+  opacity: 0; visibility: hidden; transition: opacity .3s;
+}
+.hitl.show { opacity: 1; visibility: visible; }
+.hitl__card {
+  width: min(440px, 92vw); padding: 24px; border-radius: 18px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--run-dim); box-shadow: 0 40px 90px -30px #000, 0 0 40px -10px rgba(56,189,248,.3);
+  transform: translateY(10px) scale(.98); transition: transform .3s var(--ease);
+}
+.hitl.show .hitl__card { transform: none; }
+.hitl__head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.hitl__icon { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 11px; display: grid; place-items: center; color: var(--run); background: var(--run-dim); }
+.hitl__icon svg { width: 22px; height: 22px; }
+.hitl__title { font-size: 17px; font-weight: 800; }
+.hitl__sub { font-size: 11.5px; color: var(--ink-mute); margin-top: 2px; }
+.hitl__list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 4px 0 18px; }
+.hitl__list li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-soft); }
+.hitl__check { width: 20px; height: 20px; flex: 0 0 20px; border-radius: 6px; display: grid; place-items: center; color: var(--trust); background: var(--trust-dim); font-size: 12px; font-weight: 800; }
+.hitl__approve { width: 100%; justify-content: center; font-size: 14px; padding: 12px; }
+.hitl__stamp {
+  margin-top: 14px; text-align: center; font-size: 13px; font-weight: 800; letter-spacing: .5px;
+  color: var(--trust); border: 1.5px solid var(--trust); border-radius: 10px; padding: 9px;
+  text-transform: uppercase; opacity: 0; transform: scale(.9) rotate(-3deg); transition: opacity .3s, transform .3s var(--ease);
+}
+.hitl__stamp.show { opacity: 1; transform: scale(1) rotate(-2deg); }
+.hitl__stamp::before { content: '✓ '; }
+
+/* finale punchline */
+.finale__punch { margin-top: 14px; font-size: 13px; font-weight: 700; color: var(--trust); letter-spacing: .3px; }
+
+/* =====================================================================
+   DEMO MODE  (cinematic, canvas-focused)
+   ===================================================================== */
+body.demo .rail { display: none; }
+body.demo .stage { grid-template-columns: 1fr; padding: 12px 24px 20px; }
+body.demo .metrics { margin: 0 24px; }
+body.demo { --canvas-h: 660px; }
+body.demo .caption { font-size: 15px; padding: 10px 22px; max-width: 90%; }
+body.demo .node__label { font-size: 12px; }
+body.demo .punchline { font-size: 15px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::after, *::before { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .12s !important; }
+  .edges path.flow { animation: none; stroke-dasharray: 0; }
+}
+
+/* ---------- poster-style intelligence group boxes ---------- */
+.lane-group {
+  position: absolute; z-index: 0; border-radius: 14px;
+  border: 1px solid var(--border); pointer-events: none;
+}
+.lane-group__title {
+  position: absolute; top: -9px; left: 12px; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 9px; letter-spacing: 1.3px; text-transform: uppercase; font-weight: 800;
+  padding: 3px 9px 3px 4px; border-radius: 999px; white-space: nowrap;
+  background: rgba(9,14,24,.92); border: 1px solid var(--border-soft); color: var(--ink-mute);
+}
+.lane-group__num {
+  display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%;
+  font-size: 9px; font-weight: 800; color: #0b1120;
+}
+.lane-group--sec  { border-color: rgba(251,113,133,.45); background: rgba(251,113,133,.05); box-shadow: inset 0 0 34px -18px var(--sec); }
+.lane-group--sec  .lane-group__title { color: var(--sec); border-color: rgba(251,113,133,.4); }
+.lane-group--sec  .lane-group__num { background: var(--sec); }
+.lane-group--qual { border-color: rgba(86,182,255,.45); background: rgba(86,182,255,.05); box-shadow: inset 0 0 34px -18px var(--qual); }
+.lane-group--qual .lane-group__title { color: var(--qual); border-color: rgba(86,182,255,.4); }
+.lane-group--qual .lane-group__num { background: var(--qual); }
+.lane-group--orig { border-color: rgba(180,139,255,.45); background: rgba(180,139,255,.05); box-shadow: inset 0 0 34px -18px var(--orig); }
+.lane-group--orig .lane-group__title { color: var(--orig); border-color: rgba(180,139,255,.4); }
+.lane-group--orig .lane-group__num { background: var(--orig); }
+
+/* trust-engine pipeline strip (Detect → ... → Score Trust) */
+.node--hub { width: 210px; }
+.node__pipe {
+  margin-top: 6px; padding: 3px 6px; border-radius: 6px;
+  font-size: 7.5px; letter-spacing: .3px; font-weight: 600; color: var(--run);
+  background: rgba(86,182,255,.08); border: 1px solid rgba(86,182,255,.25);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;
+}
+.node--goal { width: 128px; border-color: var(--trust-dim); box-shadow: 0 0 22px -10px var(--trust); }
+
+</style>
+</head>
+<body>
+
+  <!-- ===================== TOP BAR ===================== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/>
+        </svg>
+      </span>
+      <div>
+        <div class="brand__name">Code Sentinel</div>
+        <div class="brand__eyebrow">Team 6 · Tensor Titans</div>
+      </div>
+    </div>
+
+    <div class="titles">
+      <h1>Code Sentinel Agent Flow</h1>
+      <div class="sub">The Trust Layer for Every Repository — risky commit → verified trusted commit.</div>
+      <div class="hero"><b>Trust is not assumed.</b> Trust is verified.</div>
+    </div>
+
+    <div class="controls" role="toolbar" aria-label="Simulation controls">
+      <button class="btn btn--primary" id="btn-start" aria-label="Start simulation">
+        <span class="dot"></span><span class="txt">Start Simulation</span>
+      </button>
+      <button class="btn" id="btn-pause" aria-label="Pause or resume simulation" disabled>
+        <span class="txt">Pause</span>
+      </button>
+      <button class="btn btn--ghost" id="btn-reset" aria-label="Reset simulation">Reset</button>
+
+      <div class="seg" data-extra role="group" aria-label="Animation speed">
+        <span class="seg__label">Speed</span>
+        <button data-speed="slow"   aria-pressed="false">Slow</button>
+        <button data-speed="normal" aria-pressed="true">Normal</button>
+        <button data-speed="fast"   aria-pressed="false">Fast</button>
+      </div>
+
+      <button class="btn btn--ghost" id="btn-demo" data-extra aria-label="Toggle demo mode">Demo</button>
+      <label class="toggle">
+        <input type="checkbox" id="toggle-present" />
+        <span class="track"></span>
+        <span>Presentation</span>
+      </label>
+    </div>
+  </header>
+
+  <!-- ===================== METRIC STRIP ===================== -->
+  <div class="metrics" id="metrics" aria-label="Live pipeline metrics">
+    <div class="metric"><span class="metric__label">Active Agents</span><span class="metric__val" id="m-agents">0</span></div>
+    <div class="metric"><span class="metric__label">Evidence Items</span><span class="metric__val" id="m-evidence">0</span></div>
+    <div class="metric"><span class="metric__label">Tests Passed</span><span class="metric__val" id="m-tests">0</span></div>
+    <div class="metric"><span class="metric__label">Vulnerabilities</span><span class="metric__val warn" id="m-vulns">0</span></div>
+    <div class="metric"><span class="metric__label">Approval</span><span class="metric__val" id="m-approval">Required</span></div>
+    <div class="metric"><span class="metric__label">Trust Score</span><span class="metric__val" id="m-trust">32</span></div>
+  </div>
+
+  <!-- ===================== STAGE ===================== -->
+  <main class="stage">
+
+    <!-- LEFT RAIL -->
+    <aside class="rail rail--left">
+      <section class="panel" aria-live="polite">
+        <div class="panel__head">
+          <span class="panel__title">Active Agent</span>
+          <span class="panel__tag">LangGraph</span>
+        </div>
+        <div class="status__agent" id="status-agent">
+          <span class="status__pulse" id="status-icon"></span>
+          <div class="status__meta">
+            <div class="status__name" id="status-name">Idle</div>
+            <div class="status__state" id="status-state">Press Start Simulation</div>
+          </div>
+        </div>
+        <div class="risk-reduced" id="risk-reduced" hidden>
+          <span class="risk-reduced__k">Risk reduced</span>
+          <span class="risk-reduced__v" id="risk-reduced-val">—</span>
+        </div>
+        <div class="progress__row">
+          <span class="progress__label">Pipeline progress</span>
+          <span class="progress__pct" id="progress-pct">0%</span>
+        </div>
+        <div class="progress__bar"><div class="progress__fill" id="progress-fill"></div></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head"><span class="panel__title">Commit Trust Score</span></div>
+        <div class="gauge">
+          <div class="gauge__ring">
+            <svg width="96" height="96" viewBox="0 0 96 96">
+              <circle class="gauge__track" cx="48" cy="48" r="42" fill="none" stroke-width="8"/>
+              <circle class="gauge__arc" id="gauge-arc" cx="48" cy="48" r="42" fill="none" stroke-width="8"/>
+            </svg>
+            <div class="gauge__val">
+              <span class="gauge__num" id="gauge-num">32</span>
+              <span class="gauge__den">/ 100</span>
+            </div>
+          </div>
+          <div class="gauge__side">
+            <span class="gauge__status" id="gauge-status"><span class="dot"></span><span>Risky</span></span>
+            <div class="gauge__delta">start <b>32</b> → target <b>92</b></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head">
+          <span class="panel__title">Contributor Trust</span>
+          <span class="panel__tag" id="contrib-status">WATCH</span>
+        </div>
+        <div class="contrib__id">
+          <span class="contrib__avatar">AM</span>
+          <div>
+            <div class="contrib__handle">dev-amrita</div>
+            <div class="contrib__role">payments · core</div>
+          </div>
+          <div class="contrib__score" id="contrib-score">
+            <div class="n" id="contrib-num">84</div>
+            <div class="lbl">trust</div>
+          </div>
+        </div>
+        <div class="dims" id="dims"></div>
+      </section>
+    </aside>
+
+    <!-- CENTER CANVAS -->
+    <section class="canvas-wrap">
+      <div class="canvas" id="canvas">
+        <svg class="edges" id="edges" aria-hidden="true"></svg>
+        <div class="nodes" id="nodes"></div>
+        <div class="bubbles" id="bubbles" aria-hidden="true"></div>
+        <div class="token" id="token" aria-hidden="true"></div>
+        <div class="ghost" id="ghost-sec" aria-hidden="true"></div>
+        <div class="ghost" id="ghost-qual" aria-hidden="true"></div>
+        <div class="ghost" id="ghost-orig" aria-hidden="true"></div>
+        <div class="caption" id="caption" aria-live="polite"><span id="caption-text">Press Start to run the trust pipeline.</span></div>
+      </div>
+
+      <!-- evidence trail timeline -->
+      <div class="timeline" id="timeline" aria-label="Evidence trail">
+        <div class="tl" data-tl="input"><span class="tl__dot"></span>Input</div>
+        <div class="tl" data-tl="analysis"><span class="tl__dot"></span>Analysis</div>
+        <div class="tl" data-tl="evidence"><span class="tl__dot"></span>Evidence</div>
+        <div class="tl" data-tl="fix"><span class="tl__dot"></span>Fix</div>
+        <div class="tl" data-tl="verification"><span class="tl__dot"></span>Verification</div>
+        <div class="tl" data-tl="approval"><span class="tl__dot"></span>Approval</div>
+        <div class="tl" data-tl="report"><span class="tl__dot"></span>Report</div>
+        <div class="tl" data-tl="trust"><span class="tl__dot"></span>Trust</div>
+      </div>
+
+      <p class="punchline">
+        Most tools review code. <b>Code Sentinel verifies trust</b> — across the code, the fix, and the contributor.
+      </p>
+    </section>
+
+    <!-- RIGHT RAIL -->
+    <aside class="rail rail--right">
+      <section class="panel panel--branches">
+        <div class="panel__head">
+          <span class="panel__title">Branch Execution</span>
+          <span class="panel__tag">parallel</span>
+        </div>
+        <div class="branch" data-branch="security">
+          <div class="branch__top"><span class="branch__name">Security Intelligence</span><span class="branch__pill" data-pill="security">Idle</span></div>
+          <div class="branch__nodes">Security Agent · Code-RAG / CWE</div>
+        </div>
+        <div class="branch" data-branch="quality">
+          <div class="branch__top"><span class="branch__name">Code Quality Intelligence</span><span class="branch__pill" data-pill="quality">Idle</span></div>
+          <div class="branch__nodes">Static Analysis · Quality Agent</div>
+        </div>
+        <div class="branch" data-branch="originality">
+          <div class="branch__top"><span class="branch__name">Originality Intelligence</span><span class="branch__pill" data-pill="originality">Idle</span></div>
+          <div class="branch__nodes">Originality Agent · AI-Likelihood</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head">
+          <span class="panel__title">Agent Comments</span>
+          <span class="panel__tag">live</span>
+        </div>
+        <div class="log__stream" id="log-stream" aria-live="polite"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head"><span class="panel__title">Evidence &amp; Outputs</span></div>
+        <div class="evidence__list" id="evidence-list">
+          <p class="evidence__empty">Evidence cards will appear here as agents run…</p>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ===================== HUMAN APPROVAL MODAL ===================== -->
+  <div class="hitl" id="hitl" role="dialog" aria-label="Reviewer decision required">
+    <div class="hitl__card">
+      <div class="hitl__head">
+        <span class="hitl__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg></span>
+        <div>
+          <div class="hitl__title">Reviewer Decision Required</div>
+          <div class="hitl__sub">Human-in-the-loop gate · patch not yet applied</div>
+        </div>
+      </div>
+      <ul class="hitl__list">
+        <li><span class="hitl__check">✓</span> Security evidence reviewed</li>
+        <li><span class="hitl__check">✓</span> Originality risk reviewed</li>
+        <li><span class="hitl__check">✓</span> Docker verifier passed</li>
+        <li><span class="hitl__check">✓</span> Patch diff ready</li>
+      </ul>
+      <button class="btn btn--primary hitl__approve" id="hitl-approve">Approve Patch</button>
+      <div class="hitl__stamp" id="hitl-stamp">Approved by Human Reviewer</div>
+    </div>
+  </div>
+
+  <!-- ===================== FINALE ===================== -->
+  <div class="finale" id="finale" role="dialog" aria-label="Verified Trusted Commit">
+    <div class="finale__card">
+      <svg class="finale__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/>
+      </svg>
+      <div class="finale__title">Verified Trusted Commit</div>
+      <div class="finale__sub">Secure · original · verified · approved · documented.</div>
+      <div class="finale__score">Trust Score 32 → 92 · Contributor 84 → 92 · WATCH → TRUSTED</div>
+      <div class="finale__punch">Trust is not assumed. Trust is verified.</div>
+      <button class="btn btn--primary finale__close" id="finale-close">Close</button>
+    </div>
+  </div>
+
+  <script>
+/* =====================================================================
+   Code Sentinel — Agent Flow
+   Explicit multi-agent execution engine (vanilla JS, no libraries)
+   ---------------------------------------------------------------------
+   Sections:
+     1. Icons
+     2. Nodes
+     3. Edges
+     4. Flow + per-node step config
+     5. Contributor dims + terminal
+     6. State + timing
+     7. DOM refs
+     8. Build graph / dims
+     9. Animation helpers (pause-aware, reset-abortable)
+    10. UI updates (log, status, gauge, evidence, metrics, timeline, bubbles)
+    11. Branch execution engine
+    12. Controls
+    13. Reset
+    14. Init
+   ===================================================================== */
+
+/* ------------------------- 1. ICONS ------------------------- */
+const P = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICONS = {
+  alert: P('<path d="M12 3 2 20h20L12 3Z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="17.5" r=".6" fill="currentColor"/>'),
+  repo:  P('<path d="M4 4h11l5 5v11H4Z"/><path d="M15 4v5h5"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="16" x2="13" y2="16"/>'),
+  map:   P('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><line x1="9" y1="4" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="20"/>'),
+  shield:P('<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/>'),
+  lock:  P('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+  book:  P('<path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 0-2 2Z"/><path d="M5 4v16"/>'),
+  scan:  P('<path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3"/><line x1="4" y1="12" x2="20" y2="12"/>'),
+  gauge: P('<path d="M4 15a8 8 0 0 1 16 0"/><line x1="12" y1="15" x2="15" y2="10"/><circle cx="12" cy="15" r="1"/>'),
+  finger:P('<path d="M12 4a6 6 0 0 0-6 6v3M18 10a6 6 0 0 0-3-5.2M9 20c-1-1.5-1-3.5-1-5v-2a4 4 0 0 1 8 0M15 20a13 13 0 0 0 1-6"/>'),
+  spark: P('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/>'),
+  merge: P('<path d="M6 3v4a6 6 0 0 0 6 6 6 6 0 0 1 6 6v2M6 21v-2a6 6 0 0 1 6-6"/><circle cx="6" cy="4" r="1.6"/><circle cx="18" cy="20" r="1.6"/>'),
+  wrench:P('<path d="M15 7a4 4 0 0 0-5 5l-6 6 2 2 6-6a4 4 0 0 0 5-5l-2.5 2.5-2-2L15 7Z"/>'),
+  box:   P('<path d="m12 3 8 4v10l-8 4-8-4V7l8-4Z"/><path d="m4 7 8 4 8-4M12 11v10"/>'),
+  user:  P('<circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/>'),
+  check: P('<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>'),
+  doc:   P('<path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v4h4"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="16" x2="15" y2="16"/>'),
+  star:  P('<path d="m12 4 2.4 5 5.6.8-4 4 1 5.6L12 22l-5-2.6 1-5.6-4-4 5.6-.8L12 4Z"/>'),
+  badge: P('<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/>'),
+};
+
+/* ------------------------- 2. NODES ------------------------- */
+const NODES = [
+  { id:'risky',      label:'Risky Commit',      sub:'copied · AI-gen · insecure',   x:8,  y:22, icon:'alert',  size:'big' },
+  { id:'repo',       label:'Repo / GitHub',     sub:'files · commits · metadata',   x:21, y:8,  icon:'repo'  },
+  { id:'index',      label:'Index Agent',       sub:'AST · deps · file map',        x:33, y:8,  icon:'map'   },
+  { id:'engine',     label:'Trust Engine',      sub:'LangGraph multi-agent',        pipe:'Detect → Explain → Fix → Verify → Approve → Report → Score Trust', x:50, y:18, icon:'shield', size:'hub' },
+  { id:'security',   label:'Security Agent',    sub:'vulns · secrets · memory',     x:15, y:47, icon:'lock',   lane:'sec'  },
+  { id:'coderag',    label:'Code-RAG · CWE',    sub:'OWASP / CWE evidence',         x:27, y:47, icon:'book',   lane:'sec'  },
+  { id:'static',     label:'Static Analysis',   sub:'bugs · smells · patterns',     x:44, y:47, icon:'scan',   lane:'qual' },
+  { id:'quality',    label:'Quality Agent',     sub:'readability · complexity',     x:56, y:47, icon:'gauge',  lane:'qual' },
+  { id:'originality',label:'Originality Agent', sub:'MOSS-style similarity',        x:73, y:47, icon:'finger', lane:'orig' },
+  { id:'ailikely',   label:'AI-Likelihood',     sub:'risk signal · not proof',      x:85, y:47, icon:'spark',  lane:'orig' },
+  { id:'aggregator', label:'Evidence Aggregator',sub:'findings · scores · signals', x:11, y:78, icon:'merge',  size:'merge' },
+  { id:'fix',        label:'Fix Agent',         sub:'proposes patch only',          x:23.5, y:78, icon:'wrench' },
+  { id:'docker',     label:'Docker Verifier',   sub:'network-off sandbox',          x:36, y:78, icon:'box'   },
+  { id:'approval',   label:'Human Approval Gate',sub:'reviewer gate',               x:48.5, y:78, icon:'user'  },
+  { id:'patch',      label:'Patch Apply',       sub:'after approval only',          x:61, y:78, icon:'check' },
+  { id:'report',     label:'Final Report',      sub:'evidence · history',           x:73.5, y:78, icon:'doc'   },
+  { id:'trust',      label:'Contributor Trust', sub:'profile update',               x:86, y:78, icon:'star'  },
+  { id:'verified',   label:'Verified Trusted Commit', sub:'secure · original · approved', x:92, y:22, icon:'badge', size:'goal' },
+];
+
+/* ------------------------- 3. EDGES ------------------------- */
+const EDGES = [
+  ['risky','repo'], ['repo','index'], ['index','engine'],
+  ['engine','security'], ['engine','static'], ['engine','originality'],
+  ['security','coderag'], ['static','quality'], ['originality','ailikely'],
+  ['coderag','aggregator'], ['quality','aggregator'], ['ailikely','aggregator'],
+  ['aggregator','fix'],
+  ['fix','docker'], ['docker','approval'], ['approval','patch'],
+  ['patch','report'], ['report','trust'], ['trust','verified'],
+];
+const RETRY = ['docker','fix'];   // bounded retry loop (dotted, informational)
+
+const GROUPS = [
+  { num:'1', text:'Security Intelligence',     color:'sec',  x:8,  y:35.5, w:26, h:23 },
+  { num:'2', text:'Code Quality Intelligence', color:'qual', x:37, y:35.5, w:26, h:23 },
+  { num:'3', text:'Originality Intelligence',  color:'orig', x:66, y:35.5, w:26, h:23 },
+];
+
+/* ------------------------- 4. FLOW + STEP CONFIG ------------------------- */
+const FLOW = {
+  main:  ['risky','repo','index','engine'],
+  branches: [
+    { id:'security',    pill:'security',    nodes:['security','coderag'],    ghost:'ghost-sec'  },
+    { id:'quality',     pill:'quality',     nodes:['static','quality'],      ghost:'ghost-qual' },
+    { id:'originality', pill:'originality', nodes:['originality','ailikely'],ghost:'ghost-orig' },
+  ],
+  merge: 'aggregator',
+  verification: ['fix','docker','approval','patch','report','trust','verified'],
+};
+const AGENT_NODES = ['index','security','coderag','static','quality','originality','ailikely','fix','docker']; // → 9
+
+/* per-node metadata (comment bubble, log, evidence, trust, riskReduced, caption) */
+const STEP = {
+  risky: { state:'warn', badge:'UNTRUSTED', trust:32, kind:'warn', phase:'amber',
+    comment:'Untrusted code enters. A passing build does not mean trusted.',
+    log:'Risky commit 9f3a1c2 received — trust not assumed.',
+    caption:'Step 1 — Risky commit enters the pipeline.' },
+  repo: { phase:'amber',
+    comment:'Loading repository files, commits and metadata…',
+    log:'Loaded repository files, commits and metadata.',
+    caption:'Step 2 — Repository loaded for analysis.' },
+  index: { phase:'amber',
+    comment:'Mapping files, AST, dependencies and commit metadata…',
+    log:'Index Agent mapped 47 files and dependency graph.',
+    caption:'Step 3 — Repository indexed (AST · deps · file map).' },
+  engine: { trust:46, phase:'run',
+    comment:'Starting the LangGraph multi-agent workflow…',
+    log:'Trust Engine online — multi-agent scan started.',
+    caption:'Step 4 — Trust Engine starts. Detect → Explain → Fix → Verify → Approve → Report → Score.' },
+
+  security: { state:'warn', badge:'CWE-89', kind:'warn', risk:'hidden CWE vulnerability', vuln:true,
+    comment:'Scanning for CWE risks, secrets, malicious and memory issues…',
+    log:'Security Agent detected CWE-89 injection risk.',
+    evidence:{ cls:'crit', tag:'Security · CWE-89', badge:'Critical', title:'SQL Injection risk detected',
+      meta:'payments/db.py · line 42', body:'Unsanitized input flows into <code>cursor.execute(q)</code>.' } },
+  coderag: { risk:'weak evidence trail',
+    comment:'Retrieving OWASP/CWE evidence for the finding…',
+    log:'Code-RAG retrieved OWASP/CWE evidence.',
+    evidence:{ cls:'sec', tag:'Code-RAG', badge:'Evidence Ready', title:'OWASP/CWE evidence retrieved',
+      meta:'CWE-89 · OWASP A03 Injection', body:'Finding mapped to a known vulnerability class with remediation guidance.' } },
+  static: { risk:'poor maintainability',
+    comment:'Detecting bugs, smells and unsafe patterns…',
+    log:'Static Analysis flagged unsafe patterns & smells.',
+    evidence:{ cls:'qual', tag:'Static Analysis', badge:'Moderate', title:'3 smells · 1 unsafe pattern',
+      meta:'payment handler', body:'Maintainability risks in the payment handler.' } },
+  quality: { risk:'poor maintainability',
+    comment:'Scoring readability, comments, complexity and maintainability…',
+    log:'Quality Agent scored readability & complexity.',
+    evidence:{ cls:'qual', tag:'Quality Agent', badge:'Moderate', title:'Quality score generated',
+      meta:'Readability 78 · Complexity O(n)', body:'Maintainability issue found in payment handler.' } },
+  originality: { risk:'copied code',
+    comment:'Comparing token fingerprints and near-duplicate logic…',
+    log:'Originality Agent detected similarity evidence.',
+    evidence:{ cls:'orig', tag:'Originality', badge:'Review Required', title:'Similarity evidence detected',
+      meta:'68% match · local corpus', body:'Near-duplicate logic found in order_utils.py.' } },
+  ailikely: { state:'warn', badge:'AI-LIKELY', kind:'warn', risk:'unknown authorship risk',
+    comment:'Generating risk signal. This is not proof of authorship.',
+    log:'Elevated AI-likelihood risk signal reported.',
+    evidence:{ cls:'orig', tag:'AI-Likelihood', badge:'Signal Only', title:'AI-Likelihood signal',
+      meta:'elevated risk signal', body:'Reported as a review signal, not proof of authorship.' } },
+
+  aggregator: { trust:61, phase:'run',
+    comment:'Aggregating findings, scores and risk signals…',
+    log:'Evidence Aggregator merged all branch findings.',
+    caption:'Step 6 — Evidence aggregated from every branch.',
+    evidence:{ cls:'sec', tag:'Aggregator', badge:'Merged', title:'Evidence aggregated',
+      meta:'6 findings · 3 branches', body:'Security, quality and originality evidence combined for the Fix Agent.' } },
+
+  fix: { risk:'unsafe AI patch', phase:'run',
+    comment:'Proposing patch. Repository remains untouched.',
+    log:'Fix Agent proposed a patch (repo untouched).',
+    caption:'Step 7 — Fix Agent proposes a patch. Repository untouched.',
+    evidence:{ cls:'', tag:'Fix Agent', badge:'Proposed', title:'Patch proposed',
+      meta:'parameterized query', body:'<code>+ cursor.execute(sql, params)</code> — safe binding.' } },
+  docker: { trust:78, terminal:true, risk:'unverified fix', phase:'trust',
+    comment:'Running patch inside a network-off sandbox…',
+    log:'Docker Verifier passed isolated test run.',
+    caption:'Step 8 — Fix verified in a network-off Docker sandbox.',
+    evidence:{ cls:'trust', tag:'Docker Verifier', badge:'Verified', title:'Sandbox verification passed',
+      meta:'network-off container', body:'✓ 41 tests passed · ✓ semgrep clean · ✓ container destroyed.' } },
+  approval: { wait:true, risk:'unapproved repository change', phase:'trust',
+    comment:'Reviewer must approve before patch apply.',
+    log:'Awaiting reviewer decision…', logDone:'Human approval received.',
+    caption:'Step 9 — Human approval required before any change.',
+    evidence:{ cls:'trust', tag:'Human Approval', badge:'Approved', title:'Approved by human reviewer',
+      meta:'evidence + patch reviewed', body:'Patch approved after the verifier passed.' } },
+  patch: { phase:'trust',
+    comment:'Applying approved patch to the repository…',
+    log:'Approved patch applied to the repository.',
+    caption:'Step 10 — Approved patch applied.' },
+  report: { phase:'trust',
+    comment:'Compiling evidence, fixes and approval history…',
+    log:'Final report generated with full evidence trail.',
+    caption:'Step 11 — Final report generated.',
+    evidence:{ cls:'', tag:'Final Report', badge:'Report Ready', title:'Final report generated',
+      meta:'full evidence trail', body:'Security report, quality score, fixes, confidence and approval history.' } },
+  trust: { trust:92, kind:'good', contrib:true, risk:'unknown contributor trust', phase:'trust',
+    comment:'Updating contributor profile across trust dimensions…',
+    log:'Contributor trust updated: 84 → 92.',
+    caption:'Step 12 — Contributor trust updated 84 → 92 (WATCH → TRUSTED).',
+    evidence:{ cls:'trust', tag:'Contributor Trust', badge:'Trusted', title:'Contributor trust updated',
+      meta:'dev-amrita · 84 → 92', body:'Contributor promoted to the trusted profile after a verified commit.' } },
+  verified: { state:'done', kind:'good', phase:'trust',
+    comment:'Risky commit is now a verified trusted commit.',
+    log:'Verified Trusted Commit — trust earned.',
+    caption:'Verified Trusted Commit — trust is verified, not assumed.' },
+};
+
+/* ------------------------- 5. DIMS + TERMINAL ------------------------- */
+const DIMS = [
+  { name:'Quality',        kind:'good', before:80, after:90 },
+  { name:'Readability',    kind:'good', before:74, after:86 },
+  { name:'Security',       kind:'good', before:62, after:88 },
+  { name:'Originality',    kind:'good', before:70, after:84 },
+  { name:'Optimization',   kind:'good', before:76, after:85 },
+  { name:'Memory Safety',  kind:'good', before:68, after:87 },
+  { name:'Malicious Risk', kind:'risk', before:34, after:12 },
+  { name:'AI-Likelihood',  kind:'risk', before:58, after:41 },
+];
+const TERMINAL_LINES = [
+  { t:'<span class="prompt">$</span> docker run --network none ps06/sandbox:py311' },
+  { t:'<span class="prompt">$</span> apply_patch /tmp/proposed.patch' },
+  { t:'✓ patch applied', ok:true },
+  { t:'<span class="prompt">$</span> pytest -q' },
+  { t:'✓ 41 passed', ok:true },
+  { t:'<span class="prompt">$</span> semgrep scan' },
+  { t:'✓ no blocking vulnerabilities', ok:true },
+  { t:'<span class="prompt">$</span> destroy sandbox' },
+  { t:'✓ container destroyed', ok:true },
+];
+
+/* ------------------------- 6. STATE + TIMING ------------------------- */
+const SPEED = { slow:1.7, normal:1, fast:0.5 };
+const sim = { running:false, paused:false, speed:'normal', abort:0, secs:0, done:0 };
+const TOTAL = FLOW.main.length + 6 + 1 + FLOW.verification.length; // 18
+const present = () => document.body.classList.contains('present');
+const demo    = () => document.body.classList.contains('demo');
+const baseDur = () => 1500 * SPEED[sim.speed] * (present() || demo() ? 1.35 : 1);
+const easeInOut = (p) => p < .5 ? 2*p*p : 1 - Math.pow(-2*p+2, 2)/2;
+
+/* ------------------------- 7. DOM REFS ------------------------- */
+const $ = (s) => document.querySelector(s);
+const canvas   = $('#canvas');
+const nodesEl  = $('#nodes');
+const edgesSvg = $('#edges');
+const bubblesEl= $('#bubbles');
+const tokenEl  = $('#token');
+const logEl    = $('#log-stream');
+const evEl     = $('#evidence-list');
+const gaugeArc = $('#gauge-arc');
+const gaugeNum = $('#gauge-num');
+const gaugeStatus = $('#gauge-status');
+const progFill = $('#progress-fill');
+const progPct  = $('#progress-pct');
+const stAgent  = $('#status-agent');
+const stName   = $('#status-name');
+const stState  = $('#status-state');
+const stIcon   = $('#status-icon');
+const contribScore = $('#contrib-score');
+const contribNum   = $('#contrib-num');
+const contribStatus= $('#contrib-status');
+const captionText  = $('#caption-text');
+const riskWrap = $('#risk-reduced');
+const riskVal  = $('#risk-reduced-val');
+
+const nodeMap = {};
+const edgeMap = {};
+const GAUGE_C = 2 * Math.PI * 42;
+const metrics = { agents:0, evidence:0, tests:0, vulns:0 };
+
+/* ------------------------- 8. BUILD GRAPH / DIMS ------------------------- */
+function buildGraph() {
+  NODES.forEach(n => {
+    const el = document.createElement('div');
+    const cls = n.size === 'big' ? ' node--big'
+              : n.size === 'hub' ? ' node--big node--hub'
+              : n.size === 'goal'? ' node--goal'
+              : n.size === 'merge'? ' node--merge' : '';
+    el.className = 'node' + cls;
+    el.id = 'node-' + n.id;
+    el.dataset.id = n.id;
+    el.style.left = n.x + '%';
+    el.style.top  = n.y + '%';
+    el.dataset.state = 'idle';
+    if (n.lane) el.dataset.lane = n.lane;
+    el.innerHTML = `
+      <span class="node__badge"></span>
+      <div class="node__top">
+        <span class="node__icon">${ICONS[n.icon] || ''}</span>
+        <span class="node__label">${n.label}</span>
+      </div>
+      <div class="node__sub">${n.sub}</div>
+      ${n.pipe ? `<div class="node__pipe">${n.pipe}</div>` : ''}`;
+    nodesEl.appendChild(el);
+    nodeMap[n.id] = el;
+  });
+
+  GROUPS.forEach(g => {
+    const el = document.createElement('div');
+    el.className = 'lane-group lane-group--' + g.color;
+    el.style.left = g.x + '%'; el.style.top = g.y + '%';
+    el.style.width = g.w + '%'; el.style.height = g.h + '%';
+    el.innerHTML = `<span class="lane-group__title"><span class="lane-group__num">${g.num}</span>${g.text}</span>`;
+    nodesEl.appendChild(el);
+  });
+
+  const rl = document.createElement('div');
+  rl.className = 'retry-label';
+  rl.textContent = '↺ bounded retry loop';
+  rl.style.left = '29.5%'; rl.style.top = '88%';
+  nodesEl.appendChild(rl);
+
+  layoutEdges();
+}
+
+function center(id) {
+  const n = NODES.find(v => v.id === id);
+  return { x: n.x / 100 * canvas.clientWidth, y: n.y / 100 * canvas.clientHeight };
+}
+function bezier(a, b) {
+  const dx = (b.x - a.x) * 0.45;
+  return `M ${a.x} ${a.y} C ${a.x+dx} ${a.y} ${b.x-dx} ${b.y} ${b.x} ${b.y}`;
+}
+function layoutEdges() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  edgesSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  edgesSvg.innerHTML = '';
+  EDGES.forEach(([from, to]) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', bezier(center(from), center(to)));
+    edgesSvg.appendChild(path);
+    edgeMap[from + '>' + to] = path;
+  });
+  const a = center(RETRY[0]), b = center(RETRY[1]);
+  const rp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  rp.setAttribute('d', `M ${a.x} ${a.y} Q ${(a.x+b.x)/2} ${Math.min(a.y,b.y)+58} ${b.x} ${b.y}`);
+  rp.setAttribute('class', 'retry');
+  edgesSvg.appendChild(rp);
+  if (sim.done > 0) restorePaintedEdges();
+}
+function restorePaintedEdges() {
+  EDGES.forEach(([from, to]) => {
+    const nf = nodeMap[from], nt = nodeMap[to];
+    if (nf && nt && nf.dataset.state !== 'idle' && nt.dataset.state !== 'idle') {
+      const e = edgeMap[from + '>' + to]; if (e) e.classList.add('done');
+    }
+  });
+}
+
+function buildDims() {
+  const wrap = $('#dims'); wrap.innerHTML = '';
+  DIMS.forEach((d, i) => {
+    const row = document.createElement('div');
+    row.className = 'dim'; row.dataset.kind = d.kind;
+    row.innerHTML = `
+      <span class="dim__name">${d.name}</span>
+      <span class="dim__bar"><span class="dim__fill" id="dim-${i}"></span></span>
+      <span class="dim__val" id="dimv-${i}">–</span>`;
+    wrap.appendChild(row);
+  });
+}
+function setDims(phase) {
+  DIMS.forEach((d, i) => {
+    const v = d[phase];
+    $('#dim-' + i).style.width = v + '%';
+    $('#dimv-' + i).textContent = v;
+  });
+}
+
+/* ------------------------- 9. ANIMATION HELPERS ------------------------- */
+function animate(dur, onFrame) {
+  const myAbort = sim.abort;
+  return new Promise(resolve => {
+    let t = 0, last = performance.now();
+    function loop(now) {
+      if (myAbort !== sim.abort) return;      // reset → drop silently
+      if (!sim.paused) t += now - last;
+      last = now;
+      const p = Math.min(1, dur ? t / dur : 1);
+      onFrame(p);
+      if (p >= 1) return resolve();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  });
+}
+const wait = (ms) => animate(ms, () => {});
+const aborted = () => sim.abort !== curAbort;
+
+function place(el, x, y) { el.style.left = x + 'px'; el.style.top = y + 'px'; }
+async function moveAlong(el, fromId, toId, dur) {
+  el.classList.add('visible');
+  const from = center(fromId), to = center(toId);
+  const edge = edgeMap[fromId + '>' + toId];
+  if (edge) {
+    const len = edge.getTotalLength();
+    await animate(dur, p => { const pt = edge.getPointAtLength(len * easeInOut(p)); place(el, pt.x, pt.y); });
+  } else {
+    await animate(dur, p => { const e = easeInOut(p); place(el, from.x+(to.x-from.x)*e, from.y+(to.y-from.y)*e); });
+  }
+  place(el, to.x, to.y);
+}
+function tokenPhase(el, phase) {
+  el.classList.remove('phase-run','phase-trust');
+  if (phase === 'trust') el.classList.add('phase-trust');
+  else if (phase === 'run') el.classList.add('phase-run');
+}
+
+/* ------------------------- 10. UI UPDATES ------------------------- */
+function stamp() {
+  const m = String(Math.floor(sim.secs/60)).padStart(2,'0');
+  const s = String(sim.secs%60).padStart(2,'0');
+  return `${m}:${s}`;
+}
+function addLog(msg, kind) {
+  if (!msg) return;
+  const line = document.createElement('div');
+  line.className = 'log__line' + (kind ? ' ' + kind : '');
+  line.innerHTML = `<span class="log__time">[${stamp()}]</span><span class="log__msg"></span>`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+  typeInto(line.querySelector('.log__msg'), msg);
+}
+function typeInto(el, text) {
+  let i = 0; const speed = Math.max(7, Math.min(24, 460/text.length));
+  (function tick(){ el.textContent = text.slice(0, i++); if (i <= text.length) setTimeout(tick, speed); })();
+}
+function setStatus(name, state, stateText) {
+  stName.textContent = name; stState.textContent = stateText;
+  stAgent.className = 'status__agent' + (state ? ' status--' + state : '');
+  const cfg = NODES.find(n => n.label === name);
+  stIcon.innerHTML = cfg ? ICONS[cfg.icon] : ICONS.shield;
+}
+function updateCaption(text) { if (text) captionText.textContent = text; }
+function updateRiskReduced(text) {
+  if (!text) return;
+  riskWrap.hidden = false;
+  riskVal.textContent = text;
+  riskWrap.classList.remove('flash'); void riskWrap.offsetWidth; riskWrap.classList.add('flash');
+}
+
+let gaugeVal = 32;
+function setTrust(target) {
+  const from = gaugeVal;
+  animate(750, p => {
+    const v = Math.round(from + (target-from)*easeInOut(p));
+    gaugeNum.textContent = v;
+    gaugeArc.style.strokeDashoffset = GAUGE_C * (1 - v/100);
+    paintGauge(v);
+    $('#m-trust').textContent = v;
+  });
+  gaugeVal = target;
+}
+function paintGauge(v) {
+  let color, label;
+  if (v < 50)      { color='var(--risk)';  label='Risky'; }
+  else if (v < 85) { color='var(--run)';   label='Under Verification'; }
+  else             { color='var(--trust)'; label='Verified Trusted Commit'; }
+  gaugeArc.style.stroke = color;
+  gaugeStatus.style.background = v<50?'var(--risk-dim)':v<85?'var(--run-dim)':'var(--trust-dim)';
+  gaugeStatus.style.color = color;
+  gaugeStatus.querySelector('span:last-child').textContent = label;
+}
+function bumpProgress() {
+  sim.done++;
+  const pct = Math.round(sim.done / TOTAL * 100);
+  progFill.style.width = pct + '%';
+  progPct.textContent = pct + '%';
+}
+function addEvidence(ev) {
+  if (!ev) return;
+  const ph = evEl.querySelector('.evidence__empty'); if (ph) ph.remove();
+  const card = document.createElement('div');
+  card.className = 'ev-card ' + (ev.cls || '');
+  card.innerHTML = `
+    <div class="ev-card__head"><span class="ev-card__tag">${ev.tag}</span>${ev.badge?`<span class="ev-card__badge">${ev.badge}</span>`:''}</div>
+    <div class="ev-card__title">${ev.title}</div>
+    ${ev.meta?`<div class="ev-card__meta">${ev.meta}</div>`:''}
+    <div class="ev-card__body">${ev.body}</div>`;
+  evEl.prepend(card);
+  metrics.evidence++; $('#m-evidence').textContent = metrics.evidence;
+}
+async function runTerminal() {
+  const card = document.createElement('div');
+  card.className = 'ev-card trust';
+  card.innerHTML = `<div class="terminal"><div class="terminal__bar"><span></span><span></span><span></span><em>sandbox — network:none</em></div><div id="term-body"></div></div>`;
+  evEl.prepend(card);
+  const body = card.querySelector('#term-body');
+  let passed = 0;
+  for (const line of TERMINAL_LINES) {
+    if (aborted()) return;
+    const div = document.createElement('div');
+    div.className = 'terminal__line' + (line.ok ? ' ok' : '');
+    body.appendChild(div);
+    const txt = line.t, plain = txt.replace(/<[^>]+>/g, '');
+    await animate(Math.max(200, plain.length*20*SPEED[sim.speed]), p => {
+      const n = Math.round(plain.length*p);
+      div.innerHTML = (p>=1) ? txt : plain.slice(0,n) + '<span class="term-caret">&nbsp;</span>';
+    });
+    div.innerHTML = txt;
+    if (line.t.includes('41 passed')) { animateCount('#m-tests', 0, 41, 500); }
+    await wait(90 * SPEED[sim.speed]);
+  }
+}
+function animateCount(sel, from, to, dur) {
+  const el = $(sel);
+  animate(dur, p => { el.textContent = Math.round(from+(to-from)*easeInOut(p)); });
+}
+function bumpAgents(id) {
+  if (!AGENT_NODES.includes(id)) return;
+  metrics.agents = Math.min(9, metrics.agents+1);
+  $('#m-agents').textContent = metrics.agents;
+}
+/* floating comment bubble near a node */
+function showComment(id, text, hold) {
+  if (!text) return;
+  const c = center(id);
+  const b = document.createElement('div');
+  b.className = 'bubble';
+  b.textContent = text;
+  b.style.left = c.x + 'px';
+  b.style.top  = (c.y) + 'px';
+  bubblesEl.appendChild(b);
+  requestAnimationFrame(() => b.classList.add('show'));
+  const life = (hold || 2200) * (present()||demo()?1.3:1);
+  setTimeout(() => { b.classList.remove('show'); setTimeout(()=>b.remove(), 350); }, life);
+}
+/* evidence-trail timeline */
+const TL_ORDER = ['input','analysis','evidence','fix','verification','approval','report','trust'];
+function setTimeline(key) {
+  const idx = TL_ORDER.indexOf(key);
+  TL_ORDER.forEach((k, i) => {
+    const el = document.querySelector(`.tl[data-tl="${k}"]`);
+    if (!el) return;
+    el.classList.toggle('done', i <= idx);
+    el.classList.toggle('active', i === idx);
+  });
+}
+
+/* activate a node: state + status + agent count + comment + risk-reduced */
+function activateNode(id, opts={}) {
+  const cfg = NODES.find(n => n.id === id);
+  const s = STEP[id] || {};
+  const el = nodeMap[id];
+  el.dataset.state = s.wait ? 'wait' : 'running';
+  setStatus(cfg.label, 'running', s.wait ? 'Waiting for reviewer…' : 'Running…');
+  bumpAgents(id);
+  if (s.comment) showComment(id, s.comment);
+  if (s.caption) updateCaption(s.caption);
+  if (s.risk) updateRiskReduced(s.risk);
+  if (s.vuln) { metrics.vulns = 1; $('#m-vulns').textContent = '1'; }
+  addLog(s.log, s.kind);
+}
+/* finalize a node to done/warn + evidence + trust + badge */
+function finishNode(id) {
+  const s = STEP[id] || {};
+  const el = nodeMap[id];
+  if (s.evidence) addEvidence(s.evidence);
+  if (typeof s.trust === 'number') setTrust(s.trust);
+  el.dataset.state = s.state === 'warn' ? 'warn' : 'done';
+  if (s.badge) el.querySelector('.node__badge').textContent = s.badge;
+  bumpProgress();
+}
+
+/* ------------------------- 11. EXECUTION ENGINE ------------------------- */
+let curAbort = 0;
+
+async function traverse(fromId, toId, tokenEl, phase) {
+  const edge = edgeMap[fromId + '>' + toId];
+  if (edge) edge.classList.add('active','flow');
+  tokenPhase(tokenEl, phase);
+  await moveAlong(tokenEl, fromId, toId, baseDur() * 0.7);
+  if (edge) { edge.classList.remove('active','flow'); edge.classList.add('done'); }
+}
+
+async function runMainPath() {
+  setTimeline('input');
+  const path = FLOW.main;
+  // seed token at risky
+  const c = center(path[0]); place(tokenEl, c.x, c.y); tokenEl.classList.add('visible');
+  for (let i = 0; i < path.length; i++) {
+    if (aborted()) return;
+    const id = path[i];
+    sim.secs += i === 0 ? 0 : 2;
+    if (i > 0) await traverse(path[i-1], id, tokenEl, STEP[id].phase);
+    if (aborted()) return;
+    activateNode(id);
+    await wait(baseDur() * 0.55);
+    if (aborted()) return;
+    finishNode(id);
+    if (id === 'engine') setTimeline('analysis');
+  }
+}
+
+async function runBranch(branch) {
+  const ghost = document.getElementById(branch.ghost);
+  const pill = document.querySelector(`.branch__pill[data-pill="${branch.pill}"]`);
+  const row  = document.querySelector(`.branch[data-branch="${branch.id}"]`);
+  const setPill = (t, cls) => { pill.textContent = t; pill.className = 'branch__pill ' + cls; row.dataset.state = cls; };
+  setPill('Running', 'run');
+
+  const [entry, second] = branch.nodes;
+  // engine → entry
+  await traverse('engine', entry, ghost, 'run');
+  if (aborted()) return;
+  activateNode(entry);
+  await wait(baseDur() * 0.5);
+  if (aborted()) return;
+  finishNode(entry);
+
+  // entry → second
+  await traverse(entry, second, ghost, 'run');
+  if (aborted()) return;
+  activateNode(second);
+  await wait(baseDur() * 0.5);
+  if (aborted()) return;
+  finishNode(second);
+  setPill('Evidence Ready', 'evidence');
+
+  // second → aggregator (converge)
+  await traverse(second, 'aggregator', ghost, 'run');
+  ghost.classList.remove('visible');
+  setPill('Complete', 'done');
+}
+
+async function runBranchGroup() {
+  updateCaption('Step 5 — Security, Quality and Originality agents run in parallel.');
+  addLog('Trust Engine dispatched 3 parallel intelligence branches.', '');
+  // stagger the starts slightly so the three ghost tokens read as parallel, not simultaneous
+  const runs = FLOW.branches.map((b, i) =>
+    (async () => { await wait(i * baseDur() * 0.18); if (!aborted()) await runBranch(b); })()
+  );
+  await Promise.all(runs);
+  setTimeline('evidence');
+}
+
+async function mergeBranches() {
+  if (aborted()) return;
+  const el = nodeMap.aggregator;
+  activateNode('aggregator');
+  el.classList.add('pulse');
+  await wait(baseDur() * 0.7);
+  if (aborted()) return;
+  finishNode('aggregator');
+  el.classList.remove('pulse');
+  // main token resumes from aggregator
+  const c = center('aggregator'); place(tokenEl, c.x, c.y); tokenEl.classList.add('visible');
+}
+
+async function runApprovalGate() {
+  const modal = $('#hitl'), stamp = $('#hitl-stamp'), btn = $('#hitl-approve');
+  stamp.classList.remove('show');
+  modal.classList.add('show');
+  setTimeline('approval');
+  let resolved = false;
+  const approve = () => {
+    if (resolved) return; resolved = true;
+    btn.disabled = true;
+    stamp.classList.add('show');
+    addLog(STEP.approval.logDone, 'good');
+    $('#m-approval').textContent = 'Approved';
+  };
+  btn.disabled = false;
+  btn.onclick = approve;
+  // auto-approve after a beat (still interactive if a presenter clicks first)
+  await wait(1500 * (present()||demo()?1.4:1));
+  if (aborted()) { modal.classList.remove('show'); return; }
+  approve();
+  await wait(950);
+  modal.classList.remove('show');
+}
+
+async function runVerificationPath() {
+  const path = FLOW.verification; // fix..verified
+  let prev = 'aggregator';
+  for (let i = 0; i < path.length; i++) {
+    if (aborted()) return;
+    const id = path[i], s = STEP[id];
+    sim.secs += s.wait ? 4 : 2;
+    await traverse(prev, id, tokenEl, s.phase);
+    if (aborted()) return;
+    activateNode(id);
+
+    if (id === 'fix') setTimeline('fix');
+    if (id === 'docker') { setTimeline('verification'); await runTerminal(); }
+    if (id === 'report') setTimeline('report');
+
+    await wait(baseDur() * (s.wait ? 0.4 : 0.55));
+    if (aborted()) return;
+
+    if (id === 'approval') { await runApprovalGate(); if (aborted()) return; }
+
+    if (id === 'trust') {
+      setDims('after');
+      contribScore.classList.add('up');
+      contribNum.textContent = '92';
+      contribStatus.textContent = 'TRUSTED';
+      contribStatus.classList.add('trusted');
+      setTimeline('trust');
+    }
+    finishNode(id);
+    prev = id;
+  }
+}
+
+async function completeSimulation() {
+  sim.running = false;
+  setControls();
+  updateCaption('Verified Trusted Commit — trust is verified, not assumed.');
+  $('#finale').classList.add('show');
+}
+
+async function runSimulation() {
+  if (sim.running) return;
+  resetSimulation();
+  sim.running = true; curAbort = sim.abort; setControls();
+  await runMainPath();      if (aborted()) return;
+  await runBranchGroup();   if (aborted()) return;
+  await mergeBranches();    if (aborted()) return;
+  await runVerificationPath(); if (aborted()) return;
+  await completeSimulation();
+}
+
+/* ------------------------- 12. CONTROLS ------------------------- */
+const btnStart = $('#btn-start');
+const btnPause = $('#btn-pause');
+const btnReset = $('#btn-reset');
+function setControls() {
+  btnStart.disabled = sim.running;
+  btnPause.disabled = !sim.running;
+  btnPause.querySelector('.txt').textContent = sim.paused ? 'Resume' : 'Pause';
+}
+btnStart.addEventListener('click', runSimulation);
+btnReset.addEventListener('click', resetSimulation);
+btnPause.addEventListener('click', () => {
+  if (!sim.running) return;
+  sim.paused = !sim.paused; setControls();
+  setStatus(stName.textContent, sim.paused ? '' : 'running', sim.paused ? 'Paused' : 'Running…');
+});
+document.querySelectorAll('[data-speed]').forEach(b => {
+  b.addEventListener('click', () => {
+    sim.speed = b.dataset.speed;
+    document.querySelectorAll('[data-speed]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  });
+});
+$('#toggle-present').addEventListener('change', (e) => {
+  document.body.classList.toggle('present', e.target.checked);
+  requestAnimationFrame(() => { fitNodeScale(); layoutEdges(); });
+});
+$('#btn-demo').addEventListener('click', () => {
+  document.body.classList.toggle('demo');
+  requestAnimationFrame(() => { fitNodeScale(); layoutEdges(); });
+});
+$('#finale-close').addEventListener('click', () => $('#finale').classList.remove('show'));
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.code === 'Space') { e.preventDefault(); if (sim.running) btnPause.click(); else btnStart.click(); }
+  else if (e.key.toLowerCase() === 'r') btnReset.click();
+  else if (e.key.toLowerCase() === 'f') { const t=$('#toggle-present'); t.checked=!t.checked; t.dispatchEvent(new Event('change')); }
+  else if (e.key.toLowerCase() === 'd') $('#btn-demo').click();
+  else if (e.key === 'Escape') {
+    const t=$('#toggle-present'); if (t.checked){ t.checked=false; t.dispatchEvent(new Event('change')); }
+    document.body.classList.remove('demo');
+    $('#finale').classList.remove('show'); $('#hitl').classList.remove('show');
+  }
+});
+
+function fitNodeScale() {
+  const stage = document.querySelector('.stage');
+  const cw = canvas.clientWidth || 900;
+  // constant node-to-canvas ratio at every width & mode so boxes never collide
+  const scale = Math.max(0.6, Math.min(1.2, cw / 940));
+  stage.style.setProperty('--node-scale', scale.toFixed(3));
+}
+
+/* ------------------------- 13. RESET ------------------------- */
+function resetSimulation() {
+  sim.abort++;
+  sim.running = false; sim.paused = false; sim.secs = 0; sim.done = 0;
+  gaugeVal = 32;
+
+  Object.values(nodeMap).forEach(el => {
+    el.dataset.state = 'idle';
+    el.classList.remove('pulse');
+    el.querySelector('.node__badge').textContent = '';
+  });
+  Object.values(edgeMap).forEach(e => e.classList.remove('active','flow','done'));
+  edgesSvg.querySelectorAll('.retry').forEach(e => e.classList.remove('active'));
+
+  tokenEl.className = 'token';
+  ['ghost-sec','ghost-qual','ghost-orig'].forEach(id => { const g=document.getElementById(id); g.className='ghost'; });
+  bubblesEl.innerHTML = '';
+
+  logEl.innerHTML = '';
+  evEl.innerHTML = '<p class="evidence__empty">Evidence cards will appear here as agents run…</p>';
+
+  gaugeNum.textContent = '32';
+  gaugeArc.style.strokeDasharray = GAUGE_C;
+  gaugeArc.style.strokeDashoffset = GAUGE_C * (1 - 32/100);
+  paintGauge(32);
+  progFill.style.width = '0%'; progPct.textContent = '0%';
+  setStatus('Idle', '', 'Press Start Simulation');
+  stIcon.innerHTML = ICONS.shield;
+
+  riskWrap.hidden = true; riskVal.textContent = '—';
+  updateCaption('Press Start to run the trust pipeline.');
+
+  contribScore.classList.remove('up'); contribNum.textContent = '84';
+  contribStatus.textContent = 'WATCH'; contribStatus.classList.remove('trusted');
+  setDims('before');
+
+  // metrics
+  metrics.agents = metrics.evidence = metrics.tests = metrics.vulns = 0;
+  $('#m-agents').textContent = '0';
+  $('#m-evidence').textContent = '0';
+  $('#m-tests').textContent = '0';
+  $('#m-vulns').textContent = '0';
+  $('#m-approval').textContent = 'Required';
+  $('#m-trust').textContent = '32';
+
+  document.querySelectorAll('.tl').forEach(el => el.classList.remove('done','active'));
+  document.querySelectorAll('.branch__pill').forEach(p => { p.textContent='Idle'; p.className='branch__pill'; });
+  document.querySelectorAll('.branch').forEach(b => b.dataset.state='idle');
+
+  $('#hitl').classList.remove('show'); $('#hitl-stamp').classList.remove('show');
+  $('#finale').classList.remove('show');
+  setControls();
+}
+
+/* ------------------------- RESIZE ------------------------- */
+let rz;
+window.addEventListener('resize', () => {
+  clearTimeout(rz);
+  rz = setTimeout(() => { fitNodeScale(); layoutEdges(); }, 120);
+});
+
+/* ------------------------- 14. INIT ------------------------- */
+function init() {
+  gaugeArc.style.strokeDasharray = GAUGE_C;
+  buildGraph();
+  buildDims();
+  fitNodeScale();
+  resetSimulation();
+}
+init();
+
+</script>
+</body>
+</html>
