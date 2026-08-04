@@ -1,0 +1,79 @@
+source:
+	C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle
+keystore:
+	[0] 161a0018 C:\Users\athar\AppData\Local\Temp\temp_1707480969071086494_debug.keystore (DEBUG_EMBEDDED)
+
+01. com.statiq.apk
+	WARNING: already signed - will be resigned. Old certificate info: [v2, v3]
+		Subject: Subject: CN=Android Debug, OU=Android, O=US, L=US, ST=US, C=US
+		SHA256: 1e08a903aef9c3a721510b64ec764d01d3d094eb954161b62544ea8f187b5953
+
+	SIGN
+	file: C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle\com.statiq.apk (32.39 MiB)
+	checksum: 9744c316f0e0d0f98eb788f28b670b1305d2d84e5951bbf114f7a16349d8fc11 (sha256)
+	- sign success
+
+	VERIFY
+	file: C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle\com.statiq.apk (32.39 MiB)
+	checksum: fc0fee9a5132cae682c61fa938b0e90863ff2f3ec919e813a81e5d7e6dc12b08 (sha256)
+	- signature verified [v2, v3]
+		Subject: CN=Android Debug, OU=Android, O=US, L=US, ST=US, C=US
+		SHA256: 1e08a903aef9c3a721510b64ec764d01d3d094eb954161b62544ea8f187b5953 / SHA256withRSA
+		Expires: Fri Mar 11 01:40:05 IST 2044
+
+02. config.arm64_v8a.apk
+	WARNING: already signed - will be resigned. Old certificate info: [v1, v2, v3]
+		Subject: Subject: CN=Android, OU=Android, O=Google Inc., L=Mountain View, ST=California, C=US
+		SHA256: d4b29aa880197f003439f1e391c3ecbefed0121738b082725a2c9f88a5aca214
+
+	SIGN
+	file: C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle\config.arm64_v8a.apk (28.61 MiB)
+	checksum: 22f9e156e5acaa8d10b75f7f2134dc168780d6ccd72cd030621604a58ed2517a (sha256)
+	- sign success
+
+	VERIFY
+	file: C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle\config.arm64_v8a.apk (28.6 MiB)
+	checksum: 299595bb0cf00a724edd4695fe356e2e20d37521c8b146f81901ac4f624f6c43 (sha256)
+	- signature verified [v1, v2, v3]
+		Subject: CN=Android Debug, OU=Android, O=US, L=US, ST=US, C=US
+		SHA256: 1e08a903aef9c3a721510b64ec764d01d3d094eb954161b62544ea8f187b5953 / SHA256withRSA
+		Expires: Fri Mar 11 01:40:05 IST 2044
+
+03. config.en.apk
+	WARNING: already signed - will be resigned. Old certificate info: [v1, v2, v3]
+		Subject: Subject: CN=Android, OU=Android, O=Google Inc., L=Mountain View, ST=California, C=US
+		SHA256: d4b29aa880197f003439f1e391c3ecbefed0121738b082725a2c9f88a5aca214
+
+	SIGN
+	file: C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle\config.en.apk (0.07 MiB)
+	checksum: f8f0f08cd2bce63194f59efc989f65494501da6efc26cc74bad5d78633b81740 (sha256)
+	- sign success
+
+	VERIFY
+	file: C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle\config.en.apk (0.06 MiB)
+	checksum: c51cb9b4e1e01479cfe9a70c0ea94d1205b253dae1d8b608e36b5d629a32cf18 (sha256)
+	- signature verified [v1, v2, v3]
+		Subject: CN=Android Debug, OU=Android, O=US, L=US, ST=US, C=US
+		SHA256: 1e08a903aef9c3a721510b64ec764d01d3d094eb954161b62544ea8f187b5953 / SHA256withRSA
+		Expires: Fri Mar 11 01:40:05 IST 2044
+
+04. config.hdpi.apk
+	WARNING: already signed - will be resigned. Old certificate info: [v1, v2, v3]
+		Subject: Subject: CN=Android, OU=Android, O=Google Inc., L=Mountain View, ST=California, C=US
+		SHA256: d4b29aa880197f003439f1e391c3ecbefed0121738b082725a2c9f88a5aca214
+
+	SIGN
+	file: C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle\config.hdpi.apk (0.09 MiB)
+	checksum: 3944ec1af0c075bb797013dc70a29ea9de2533312355e89de4c76de98d414db7 (sha256)
+	- sign success
+
+	VERIFY
+	file: C:\Users\athar\AppData\Local\Temp\apk-mitm-06b42f6adef900f02863390a16c3d1a5\bundle\config.hdpi.apk (0.08 MiB)
+	checksum: 7855b3eeb9bf72a47f20035e757833f1c23f2b6d198ed1331cd6d4add9eea968 (sha256)
+	- signature verified [v1, v2, v3]
+		Subject: CN=Android Debug, OU=Android, O=US, L=US, ST=US, C=US
+		SHA256: 1e08a903aef9c3a721510b64ec764d01d3d094eb954161b62544ea8f187b5953 / SHA256withRSA
+		Expires: Fri Mar 11 01:40:05 IST 2044
+
+[Mon Jun 29 02:52:27 IST 2026][v1.3.0]
+Successfully processed 4 APKs and 0 errors in 2.35 seconds.

@@ -1,0 +1,204 @@
+datasource db {
+  provider   = "postgresql"
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String? @db.Text
+  access_token       String? @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String? @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String?    @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role       @default(USER)
+  accounts      Account[]
+  sessions      Session[]
+  favorites     Favorite[]
+  reviews       Review[]
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stationId String
+  station   Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stationId])
+}
+
+model CpoCredential {
+  id           String           @id @default(cuid())
+  cpoName      String           @unique // "tata", "ather", "statiq", "chargezone"
+  authToken    String           @db.Text
+  refreshToken String?          @db.Text
+  headers      Json             // Spoofed header configuration object
+  cookies      Json?            // Captured HTTP cookies
+  expiresAt    DateTime?
+  updatedAt    DateTime         @updatedAt
+  status       CredentialStatus @default(ACTIVE)
+  errorLogs    CrawlerLog[]
+}
+
+enum CredentialStatus {
+  ACTIVE
+  EXPIRED
+  BANNED
+}
+
+model CrawlerLog {
+  id              String        @id @default(cuid())
+  cpoCredentialId String
+  cpoCredential   CpoCredential @relation(fields: [cpoCredentialId], references: [id], onDelete: Cascade)
+  statusCode      Int
+  message         String        @db.Text
+  timestamp       DateTime      @default(now())
+}
+
+model Station {
+  id             String        @id @default(cuid())
+  externalId     String?       // Original ID inside CPO system
+  source         String        // "ocm", "osm", "evyatra", "tata", "ather", "statiq"
+  name           String
+  operator       String?       // "Tata Power", "Ather Grid", "Statiq"
+  address        String
+  city           String?
+  state          String?
+  pincode        String?
+  latitude       Float
+  longitude      Float
+  
+  // Custom PostGIS column mapping will be done via raw SQL migration: geography(Point, 4326)
+  
+  connectors     Connector[]
+  status         StationStatus @default(UNKNOWN)
+  lastUpdated    DateTime      @default(now())
+  lastSynced     DateTime      @default(now())
+  imageUrl       String?
+  operatingHours String?
+  amenities      String[]      // ["PARKING", "RESTROOMS", "FOOD_COURT", "WIFI"]
+  pricingInfo    String?       // Text detail e.g., "₹21/kWh + GST"
+  favorites      Favorite[]
+  reviews        Review[]
+  snapshots      StationSnapshot[]
+
+  @@unique([source, externalId])
+  @@index([latitude, longitude])
+}
+
+model Connector {
+  id          String          @id @default(cuid())
+  stationId   String
+  station     Station         @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  externalId  String?         // Connector ID inside CPO database
+  type        ConnectorType
+  powerKw     Float?
+  currentType CurrentType
+  status      ConnectorStatus @default(UNKNOWN)
+  pricing     Float?          // Calculated float pricing per unit
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stationId String
+  station   Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  rating    Int      // 1 to 5
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+}
+
+// ===================================================================
+// ANALYTICS: Time-Series Snapshot Models
+// ===================================================================
+
+model StationSnapshot {
+  id          String           @id @default(cuid())
+  stationId   String
+  station     Station          @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  status      StationStatus
+  syncSource  String           // Which sync cycle captured this (e.g., "scheduled" or "manual")
+  capturedAt  DateTime         @default(now())
+
+  connectorSnapshots ConnectorSnapshot[]
+
+  @@index([stationId, capturedAt])
+  @@index([capturedAt])
+}
+
+model ConnectorSnapshot {
+  id                String           @id @default(cuid())
+  stationSnapshotId String
+  stationSnapshot   StationSnapshot  @relation(fields: [stationSnapshotId], references: [id], onDelete: Cascade)
+  connectorType     ConnectorType
+  powerKw           Float?
+  currentType       CurrentType
+  status            ConnectorStatus
+  capturedAt        DateTime         @default(now())
+}
+
+enum ConnectorType {
+  CCS2
+  CHADEMO
+  TYPE2
+  TYPE1
+  GB_T
+  BHARAT_AC
+  BHARAT_DC
+  WALL_SOCKET
+}
+
+enum CurrentType {
+  AC
+  DC
+}
+
+enum StationStatus {
+  AVAILABLE
+  OCCUPIED
+  OFFLINE
+  UNKNOWN
+}
+
+enum ConnectorStatus {
+  AVAILABLE
+  OCCUPIED
+  FAULTED
+  UNKNOWN
+}
