@@ -91,21 +91,21 @@ export async function captureSnapshots(syncSource: string = "scheduled"): Promis
 }
 
 /**
- * Cleans up old snapshot data according to the retention policy:
- * - Granular (30-min) snapshots: kept for 7 days
- * - Everything older than 7 days: deleted
+ * Cleans up snapshot data older than SNAPSHOT_RETENTION_DAYS (default 365).
+ * This is the sole retention control — keep it generous for behavior analysis.
  */
 export async function cleanupOldSnapshots(): Promise<number> {
   console.log("[SnapshotCapture] Running snapshot cleanup...");
 
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const retentionDays = Number(process.env.SNAPSHOT_RETENTION_DAYS ?? 365);
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
   const deletedConnectors = await db.connectorSnapshot.deleteMany({
-    where: { capturedAt: { lt: sevenDaysAgo } },
+    where: { capturedAt: { lt: cutoff } },
   });
 
   const deletedStations = await db.stationSnapshot.deleteMany({
-    where: { capturedAt: { lt: sevenDaysAgo } },
+    where: { capturedAt: { lt: cutoff } },
   });
 
   console.log(

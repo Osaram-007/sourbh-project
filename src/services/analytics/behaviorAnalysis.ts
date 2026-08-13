@@ -346,6 +346,7 @@ export async function getFleetOverview(
       snapshots: {
         where: { capturedAt: { gte: since } },
         select: { status: true },
+        orderBy: { capturedAt: "asc" },
       },
     },
   });

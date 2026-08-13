@@ -1,4 +1,4 @@
-import { ScrapedStation, ScrapedConnector, ScraperEngine } from "../types";
+import { ScrapedStation, ScrapedConnector, ScraperEngine, parseNumeric } from "../types";
 import { db } from "@/lib/db";
 import { ConnectorType, CurrentType, StationStatus, ConnectorStatus, CredentialStatus } from "@prisma/client";
 
@@ -69,7 +69,7 @@ export class BpclScraper implements ScraperEngine {
       const connectors: ScrapedConnector[] = [];
       for (const evse of (item.evses || [])) {
         for (const conn of (evse.connectors || [])) {
-          const powerKw = parseFloat(conn.max_electric_power) || 60;
+          const powerKw = parseNumeric(conn.max_electric_power);
           connectors.push({
             externalId: String(conn.id || evse.uid || "bpcl-c1"),
             type: ConnectorType.CCS2,

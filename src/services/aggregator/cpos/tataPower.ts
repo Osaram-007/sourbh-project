@@ -1,4 +1,4 @@
-import { ScrapedStation, ScrapedConnector, ScraperEngine } from "../types";
+import { ScrapedStation, ScrapedConnector, ScraperEngine, parseNumeric } from "../types";
 import { db } from "@/lib/db";
 import { ConnectorType, CurrentType, StationStatus, ConnectorStatus, CredentialStatus } from "@prisma/client";
 import { randomUUID } from "crypto";
@@ -57,7 +57,7 @@ export class TataPowerScraper implements ScraperEngine {
     };
 
     try {
-      const response = await fetch(url, { headers });
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
       
       if (response.status === 401 || response.status === 403) {
         await db.cpoCredential.update({
@@ -91,7 +91,7 @@ export class TataPowerScraper implements ScraperEngine {
         const connectors: ScrapedConnector[] = (item.connectors || []).map((c: any) => ({
           externalId: String(c.id),
           type: this.mapConnectorType(c.type || c.connectorType),
-          powerKw: parseFloat(c.power) || 15,
+          powerKw: parseNumeric(c.power),
           currentType: this.mapCurrentType(c.type || c.connectorType),
           status: c.isAvailable ? ConnectorStatus.AVAILABLE : ConnectorStatus.OCCUPIED,
           pricing: parseFloat(c.rate) || undefined,
@@ -161,7 +161,8 @@ export class TataPowerScraper implements ScraperEngine {
     const listRes = await fetch(listUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify(listBody)
+      body: JSON.stringify(listBody),
+      signal: AbortSignal.timeout(15000)
     });
 
     if (!listRes.ok) {
@@ -185,7 +186,8 @@ export class TataPowerScraper implements ScraperEngine {
           headers,
           body: JSON.stringify({
             locationid: station.station_code
-          })
+          }),
+          signal: AbortSignal.timeout(15000)
         });
 
         if (!detailsRes.ok) return null;
@@ -252,7 +254,7 @@ export class TataPowerScraper implements ScraperEngine {
           connectors.push({
             externalId: `${evse.evseCode || evse.oemSerialNumber || "evse"}-${conn.connectorCode || connectorIndex++}`,
             type: this.mapConnectorType(conn.standard),
-            powerKw: parseFloat(conn.maxElectricPower) || parseFloat(evse.chargerCapacity) || 15,
+            powerKw: parseNumeric(conn.maxElectricPower, evse.chargerCapacity),
             currentType: this.mapCurrentType(conn.powerType || conn.standard),
             status: connStatus,
             pricing: parseFloat(conn.rate) || undefined

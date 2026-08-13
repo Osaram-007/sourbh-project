@@ -1,4 +1,4 @@
-import { ScrapedStation, ScrapedConnector, ScraperEngine } from "../types";
+import { ScrapedStation, ScrapedConnector, ScraperEngine, parseNumeric } from "../types";
 import { db } from "@/lib/db";
 import { ConnectorType, CurrentType, StationStatus, ConnectorStatus } from "@prisma/client";
 
@@ -52,7 +52,8 @@ export class StatiqScraper implements ScraperEngine {
       const response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000)
       });
 
       if (!response.ok) {
@@ -81,7 +82,8 @@ export class StatiqScraper implements ScraperEngine {
               latitude: 0,
               longitude: 0,
               station_id: marker.station_id
-            })
+            }),
+            signal: AbortSignal.timeout(15000)
           });
           if (!detailRes.ok) return null;
           const detailData = await detailRes.json();
@@ -101,7 +103,7 @@ export class StatiqScraper implements ScraperEngine {
 
         const connectors: ScrapedConnector[] = [];
         for (const charger of (item.plugin_details || [])) {
-          const powerKw = parseFloat(charger.power_rating) || 50;
+          const powerKw = parseNumeric(charger.power_rating);
           const pricing = parseFloat(charger.price) || undefined;
           for (const c of (charger.connectors || [])) {
             connectors.push({
