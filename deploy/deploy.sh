@@ -24,7 +24,7 @@ echo "==> Applying database schema"
 npx prisma generate
 # No --accept-data-loss: a destructive schema change should fail the deploy
 # loudly, not silently drop data on a box whose whole job is collecting it.
-npx prisma db push --skip-generate
+npx prisma db push
 
 echo "==> Building"
 npm run build
