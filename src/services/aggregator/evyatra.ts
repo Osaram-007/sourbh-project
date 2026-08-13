@@ -17,7 +17,7 @@ export class EvYatraScraper implements ScraperEngine {
           "Accept": "application/json",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         },
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(30000),
         next: { revalidate: 3600 } // Cache for 1 hour in Next.js
       });
 
@@ -57,15 +57,8 @@ export class EvYatraScraper implements ScraperEngine {
           }
         }
 
-        // If no connectors specified, add default based on station descriptions
-        if (connectors.length === 0) {
-          connectors.push({
-            externalId: "default",
-            type: ConnectorType.WALL_SOCKET,
-            currentType: CurrentType.AC,
-            status: ConnectorStatus.UNKNOWN,
-          });
-        }
+        // No fallback default connector: if the API doesn't specify connectors, we don't know
+        // the hardware present, so leave the array empty rather than inventing it.
 
         stations.push({
           externalId: String(item.chargingStationId || item.id),
@@ -78,7 +71,10 @@ export class EvYatraScraper implements ScraperEngine {
           pincode: item.pincode || undefined,
           latitude,
           longitude,
-          status: item.status === "Active" ? StationStatus.AVAILABLE : StationStatus.UNKNOWN,
+          // "Active" only means the station is commissioned/registered with BEE, not that a
+          // connector is currently free. There is no genuine live-availability field in this
+          // payload, so we don't fabricate one.
+          status: StationStatus.UNKNOWN,
           imageUrl: undefined,
           operatingHours: item.workingTime || undefined,
           amenities: [],
@@ -89,8 +85,10 @@ export class EvYatraScraper implements ScraperEngine {
 
       return stations;
     } catch (error) {
-      console.warn("Failed to fetch live BEE EV Yatra data. Using backup regional dataset:", error);
-      return this.getBackupDataset();
+      // A failed source must contribute zero rows, never fabricated ones. Rethrow so
+      // autoSync.ts records this as a genuine "Failed" scrape instead of masking it.
+      console.warn("Failed to fetch live BEE EV Yatra data.", error);
+      throw error;
     }
   }
 
@@ -116,47 +114,5 @@ export class EvYatraScraper implements ScraperEngine {
       return CurrentType.DC;
     }
     return CurrentType.AC;
-  }
-
-  // Fallback high-quality curated backup dataset in case government servers block requests or are offline
-  private getBackupDataset(): ScrapedStation[] {
-    return [
-      {
-        externalId: "bee-backup-001",
-        source: "evyatra",
-        name: "BEE EV Yatra Public Charger - Connaught Place",
-        operator: "EESL",
-        address: "Block A, Inner Circle, Connaught Place, New Delhi",
-        city: "New Delhi",
-        state: "Delhi",
-        pincode: "110001",
-        latitude: 28.6304,
-        longitude: 77.2177,
-        status: StationStatus.AVAILABLE,
-        connectors: [
-          { externalId: "c1", type: ConnectorType.CCS2, powerKw: 50, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE },
-          { externalId: "c2", type: ConnectorType.TYPE2, powerKw: 22, currentType: CurrentType.AC, status: ConnectorStatus.AVAILABLE }
-        ],
-        amenities: ["PARKING", "RESTROOMS", "FOOD_COURT"]
-      },
-      {
-        externalId: "bee-backup-002",
-        source: "evyatra",
-        name: "EESL Smart Charging Hub - Sector 62",
-        operator: "EESL",
-        address: "C-20, Block C, Sector 62, Noida, Uttar Pradesh",
-        city: "Noida",
-        state: "Uttar Pradesh",
-        pincode: "201301",
-        latitude: 28.6273,
-        longitude: 77.3725,
-        status: StationStatus.AVAILABLE,
-        connectors: [
-          { externalId: "c1", type: ConnectorType.BHARAT_DC, powerKw: 15, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE },
-          { externalId: "c2", type: ConnectorType.BHARAT_AC, powerKw: 10, currentType: CurrentType.AC, status: ConnectorStatus.AVAILABLE }
-        ],
-        amenities: ["PARKING", "WIFI"]
-      }
-    ];
   }
 }

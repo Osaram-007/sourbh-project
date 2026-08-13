@@ -111,15 +111,18 @@ export class StatiqScraper implements ScraperEngine {
               type: this.mapConnectorType(c.connector_type),
               powerKw,
               currentType: this.mapCurrentType(c.connector_type),
-              status: c.connector_status === "available" ? ConnectorStatus.AVAILABLE : ConnectorStatus.OCCUPIED,
+              status: this.mapConnectorStatus(c.connector_status),
               pricing,
             });
           }
         }
 
-        // Map status
+        // Map status. `availability` is the live-availability field and must be the
+        // sole determinant here — `closing_status.text` only describes opening HOURS
+        // (e.g. "Open 24 hours"), not real-time availability, and mixing the two
+        // makes an OFFLINE 24/7 station impossible to record as OFFLINE.
         let status: StationStatus = StationStatus.UNKNOWN;
-        if (item.availability === "Available" || item.closing_status?.text?.toLowerCase().includes("open")) {
+        if (item.availability === "Available") {
           status = StationStatus.AVAILABLE;
         } else if (item.availability === "Unavailable") {
           status = StationStatus.OFFLINE;
@@ -170,7 +173,15 @@ export class StatiqScraper implements ScraperEngine {
     return CurrentType.DC;
   }
 
-  private getRealSeedStations(): ScrapedStation[] {
-    return [];
+  private mapConnectorStatus(statusStr: string): ConnectorStatus {
+    if (!statusStr) return ConnectorStatus.UNKNOWN;
+    const s = statusStr.toLowerCase();
+    if (s === "available") return ConnectorStatus.AVAILABLE;
+    if (["occupied", "charging", "busy", "in use"].includes(s)) return ConnectorStatus.OCCUPIED;
+    if (["faulted", "fault", "error", "out of order", "unavailable", "offline"].includes(s)) {
+      return ConnectorStatus.FAULTED;
+    }
+    // Unrecognized value — prefer UNKNOWN over guessing at OCCUPIED/FAULTED.
+    return ConnectorStatus.UNKNOWN;
   }
 }

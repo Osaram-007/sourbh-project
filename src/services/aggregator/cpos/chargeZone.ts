@@ -35,18 +35,9 @@ export class ChargeZoneScraper implements ScraperEngine {
       console.warn(`Charge Zone directory sitemap crawl failed: ${err.message}`);
     }
 
-    // Step 3: Ensure Major Highway Corridors & 180kW Fast Charger Nodes
-    const seedCorridorStations = this.getChargeZoneHighwayCorridors();
-    let seedAdded = 0;
-    for (const st of seedCorridorStations) {
-      if (!stationsMap.has(st.externalId)) {
-        stationsMap.set(st.externalId, st);
-        seedAdded++;
-      }
-    }
-    if (seedAdded > 0) {
-      console.log(`Added ${seedAdded} Charge Zone highway corridor fast-charging hubs (180kW/120kW).`);
-    }
+    // NOTE: A previous "Step 3" seeded hardcoded highway corridor stations here
+    // (invented status/connectors/pricing). Removed for data integrity - do not
+    // reintroduce fabricated stations as a fallback.
 
     const finalStations = Array.from(stationsMap.values());
     console.log(`Charge Zone Scraper complete. Total processed: ${finalStations.length} stations.`);
@@ -62,9 +53,9 @@ export class ChargeZoneScraper implements ScraperEngine {
       "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     };
 
-    const response = await fetch(url, { 
+    const response = await fetch(url, {
       headers,
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.timeout(30000)
     });
 
     if (!response.ok) {
@@ -123,9 +114,10 @@ export class ChargeZoneScraper implements ScraperEngine {
         latitude: lat,
         longitude: lng,
         status: stationStatus,
-        operatingHours: item.working_hours || "24/7",
-        amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-        pricingInfo: item.pricing || "₹21/kWh + GST via Charge Zone app",
+        // Only use values the API actually returns - no fabricated fallbacks
+        operatingHours: item.working_hours || undefined,
+        amenities: [],
+        pricingInfo: item.pricing || undefined,
         connectors,
       });
     }
@@ -139,7 +131,7 @@ export class ChargeZoneScraper implements ScraperEngine {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       },
-      signal: AbortSignal.timeout(3000)
+      signal: AbortSignal.timeout(30000)
     });
 
     if (!res.ok) {
@@ -160,7 +152,7 @@ export class ChargeZoneScraper implements ScraperEngine {
           headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
           },
-          signal: AbortSignal.timeout(2500)
+          signal: AbortSignal.timeout(15000)
         });
         if (!pageRes.ok) return [];
         const html = await pageRes.text();
@@ -189,13 +181,10 @@ export class ChargeZoneScraper implements ScraperEngine {
                     state: item.address?.addressRegion || undefined,
                     latitude: lat,
                     longitude: lng,
-                    status: StationStatus.AVAILABLE,
-                    operatingHours: "24/7",
-                    amenities: ["RESTROOMS", "PARKING"],
-                    connectors: [
-                      { externalId: `${externalId}-c1`, type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE },
-                      { externalId: `${externalId}-c2`, type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE }
-                    ]
+                    // Sitemap pages carry no live status or hardware info - do not fabricate it
+                    status: StationStatus.UNKNOWN,
+                    amenities: [],
+                    connectors: []
                   });
                 }
               }
@@ -264,116 +253,8 @@ export class ChargeZoneScraper implements ScraperEngine {
       }
     }
 
-    // Default configuration: dual 180kW CCS2 DC Ultra-Fast Charger for Charge Zone highway stations
-    return [
-      { externalId: `${stationId}-c1`, type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status },
-      { externalId: `${stationId}-c2`, type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status }
-    ];
-  }
-
-  // Key Charge Zone 180kW / 120kW supercharging corridor locations across India
-  private getChargeZoneHighwayCorridors(): ScrapedStation[] {
-    return [
-      {
-        externalId: "cz-rohtak-180kw",
-        source: "chargezone",
-        name: "Charge Zone Supercharger - Rohtak Highway Hub (180kW)",
-        operator: "Charge Zone",
-        address: "NH-10 Delhi-Rohtak Highway, Near Medical Mor, Rohtak, Haryana",
-        city: "Rohtak",
-        state: "Haryana",
-        pincode: "124001",
-        latitude: 28.8955,
-        longitude: 76.6066,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-        pricingInfo: "₹21/kWh + GST",
-        connectors: [
-          { externalId: "cz-rohtak-c1", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 },
-          { externalId: "cz-rohtak-c2", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 }
-        ]
-      },
-      {
-        externalId: "cz-gurugram-180kw",
-        source: "chargezone",
-        name: "Charge Zone Supercharger - Cyber Hub Gurugram (180kW)",
-        operator: "Charge Zone",
-        address: "Cyber City, Phase 2, DLF Cyber City, Gurugram, Haryana",
-        city: "Gurugram",
-        state: "Haryana",
-        pincode: "122002",
-        latitude: 28.4950,
-        longitude: 77.0890,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["FOOD_COURT", "RESTROOMS", "WIFI", "PARKING"],
-        pricingInfo: "₹21/kWh + GST",
-        connectors: [
-          { externalId: "cz-gurugram-c1", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 },
-          { externalId: "cz-gurugram-c2", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 }
-        ]
-      },
-      {
-        externalId: "cz-mumbai-pune-180kw",
-        source: "chargezone",
-        name: "Charge Zone Supercharger - Khalapur Food Plaza (180kW)",
-        operator: "Charge Zone",
-        address: "Mumbai-Pune Expressway, Khalapur Toll Plaza, Maharashtra",
-        city: "Khalapur",
-        state: "Maharashtra",
-        pincode: "410203",
-        latitude: 18.7833,
-        longitude: 73.2833,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["FOOD_COURT", "RESTROOMS", "PARKING"],
-        pricingInfo: "₹22/kWh + GST",
-        connectors: [
-          { externalId: "cz-mp-c1", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 22 },
-          { externalId: "cz-mp-c2", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 22 }
-        ]
-      },
-      {
-        externalId: "cz-ahmedabad-180kw",
-        source: "chargezone",
-        name: "Charge Zone Supercharger - SG Highway Ahmedabad (180kW)",
-        operator: "Charge Zone",
-        address: "Sarkhej - Gandhinagar Hwy, Bodakdev, Ahmedabad, Gujarat",
-        city: "Ahmedabad",
-        state: "Gujarat",
-        pincode: "380054",
-        latitude: 23.0384,
-        longitude: 72.5119,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["FOOD_COURT", "RESTROOMS", "PARKING"],
-        pricingInfo: "₹20/kWh + GST",
-        connectors: [
-          { externalId: "cz-ahm-c1", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 20 },
-          { externalId: "cz-ahm-c2", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 20 }
-        ]
-      },
-      {
-        externalId: "cz-bengaluru-180kw",
-        source: "chargezone",
-        name: "Charge Zone Supercharger - Electronic City Bengaluru (180kW)",
-        operator: "Charge Zone",
-        address: "Hosur Road, Electronic City Phase 1, Bengaluru, Karnataka",
-        city: "Bengaluru",
-        state: "Karnataka",
-        pincode: "560100",
-        latitude: 12.8452,
-        longitude: 77.6602,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["FOOD_COURT", "RESTROOMS", "PARKING"],
-        pricingInfo: "₹21/kWh + GST",
-        connectors: [
-          { externalId: "cz-blr-c1", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 },
-          { externalId: "cz-blr-c2", type: ConnectorType.CCS2, powerKw: 180, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 }
-        ]
-      }
-    ];
+    // Cannot determine actual connector hardware from this data - record nothing
+    // rather than fabricating a "dual 180kW CCS2" default.
+    return [];
   }
 }

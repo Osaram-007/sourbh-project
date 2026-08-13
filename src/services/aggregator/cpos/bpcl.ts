@@ -2,6 +2,26 @@ import { ScrapedStation, ScrapedConnector, ScraperEngine, parseNumeric } from ".
 import { db } from "@/lib/db";
 import { ConnectorType, CurrentType, StationStatus, ConnectorStatus, CredentialStatus } from "@prisma/client";
 
+// Maps an OCPI EVSE status string to our ConnectorStatus. Unrecognised values
+// resolve to UNKNOWN rather than being guessed — collapsing everything
+// non-available into OCCUPIED would make FAULTED unreachable in analytics.
+function mapOcpiConnectorStatus(status: unknown): ConnectorStatus {
+  const s = String(status ?? "").toUpperCase();
+  if (s === "AVAILABLE") return ConnectorStatus.AVAILABLE;
+  if (s === "CHARGING" || s === "OCCUPIED" || s === "RESERVED" || s === "BLOCKED") return ConnectorStatus.OCCUPIED;
+  if (s === "OUTOFORDER" || s === "INOPERATIVE" || s === "REMOVED") return ConnectorStatus.FAULTED;
+  return ConnectorStatus.UNKNOWN;
+}
+
+// Station availability is derived from real connector states, never assumed.
+function deriveStationStatus(connectors: ScrapedConnector[]): StationStatus {
+  if (connectors.length === 0) return StationStatus.UNKNOWN;
+  if (connectors.some((c) => c.status === ConnectorStatus.AVAILABLE)) return StationStatus.AVAILABLE;
+  if (connectors.some((c) => c.status === ConnectorStatus.OCCUPIED)) return StationStatus.OCCUPIED;
+  if (connectors.every((c) => c.status === ConnectorStatus.FAULTED)) return StationStatus.OFFLINE;
+  return StationStatus.UNKNOWN;
+}
+
 export class BpclScraper implements ScraperEngine {
   name = "bpcl";
 
@@ -38,7 +58,7 @@ export class BpclScraper implements ScraperEngine {
       ...(credentials.headers as Record<string, string>)
     };
 
-    const response = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(30000) });
 
     if (response.status === 401 || response.status === 403) {
       await db.cpoCredential.update({
@@ -75,8 +95,9 @@ export class BpclScraper implements ScraperEngine {
             type: ConnectorType.CCS2,
             powerKw,
             currentType: CurrentType.DC,
-            status: evse.status === "AVAILABLE" ? ConnectorStatus.AVAILABLE : ConnectorStatus.OCCUPIED,
-            pricing: parseFloat(conn.tariff_id) || 21
+            status: mapOcpiConnectorStatus(evse.status),
+            // tariff_id is an identifier, not a price — never treat it as one.
+            pricing: undefined
           });
         }
       }
@@ -92,14 +113,15 @@ export class BpclScraper implements ScraperEngine {
         pincode: item.postal_code || undefined,
         latitude: lat,
         longitude: lng,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-        pricingInfo: "₹21/kWh + GST via HelloBPCL app",
-        connectors: connectors.length > 0 ? connectors : [
-          { externalId: `bpcl-${item.id}-c1`, type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 },
-          { externalId: `bpcl-${item.id}-c2`, type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 }
-        ]
+        // Availability must come from live EVSE data, never assumed. Operating
+        // hours / amenities / pricing / connectors are only recorded when the
+        // API actually returns them — no invented defaults (they would be
+        // snapshotted every cycle as if they were measurements).
+        status: deriveStationStatus(connectors),
+        operatingHours: undefined,
+        amenities: [],
+        pricingInfo: undefined,
+        connectors
       });
     }
 
@@ -117,7 +139,7 @@ export class BpclScraper implements ScraperEngine {
           "Accept": "application/json",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         },
-        signal: AbortSignal.timeout(2000)
+        signal: AbortSignal.timeout(30000)
       });
 
       if (response.ok) {
@@ -143,14 +165,13 @@ export class BpclScraper implements ScraperEngine {
               state: item.state || undefined,
               latitude: lat,
               longitude: lng,
-              status: StationStatus.AVAILABLE,
+              // Only the location is real (from the API). We have no genuine live-availability
+              // signal, connector hardware info, or pricing for this station, so we don't
+              // fabricate them.
+              status: StationStatus.UNKNOWN,
               operatingHours: "24/7",
               amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-              pricingInfo: "₹21/kWh + GST via HelloBPCL app",
-              connectors: [
-                { externalId: `${externalId}-c1`, type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 },
-                { externalId: `${externalId}-c2`, type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 }
-              ]
+              connectors: []
             });
           }
         }
@@ -159,122 +180,8 @@ export class BpclScraper implements ScraperEngine {
       // Non-fatal if public endpoint times out
     }
 
-    // 2. Add real operational BPCL Energy Stations along major highway corridors
-    const seedCorridorStations = this.getBpclHighwayCorridorStations();
-    for (const st of seedCorridorStations) {
-      if (!bpclMap.has(st.externalId)) {
-        bpclMap.set(st.externalId, st);
-      }
-    }
-
     const results = Array.from(bpclMap.values());
     console.log(`BPCL eDrive Public Discovery engine complete. Total processed: ${results.length} stations.`);
     return results;
-  }
-
-  // Real operational BPCL Energy Stations fast chargers along primary Indian highway corridors
-  private getBpclHighwayCorridorStations(): ScrapedStation[] {
-    return [
-      {
-        externalId: "bpcl-nh48-gurugram",
-        source: "bpcl",
-        name: "BPCL eDrive - Manesar Highway Hub (60kW DC)",
-        operator: "BPCL eDrive",
-        address: "NH-48 Delhi-Jaipur Highway, Kherki Daula, Manesar, Gurugram, Haryana",
-        city: "Gurugram",
-        state: "Haryana",
-        pincode: "122004",
-        latitude: 28.3615,
-        longitude: 76.9450,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-        pricingInfo: "₹21/kWh + GST",
-        connectors: [
-          { externalId: "bpcl-m-c1", type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 },
-          { externalId: "bpcl-m-c2", type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 }
-        ]
-      },
-      {
-        externalId: "bpcl-mumbai-pune-expressway",
-        source: "bpcl",
-        name: "BPCL eDrive - Talegaon Expressway Plaza (120kW DC)",
-        operator: "BPCL eDrive",
-        address: "Mumbai-Pune Expressway, Talegaon Toll Plaza, Maharashtra",
-        city: "Talegaon",
-        state: "Maharashtra",
-        pincode: "410507",
-        latitude: 18.7300,
-        longitude: 73.6800,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-        pricingInfo: "₹21.5/kWh + GST",
-        connectors: [
-          { externalId: "bpcl-tp-c1", type: ConnectorType.CCS2, powerKw: 120, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21.5 },
-          { externalId: "bpcl-tp-c2", type: ConnectorType.CCS2, powerKw: 120, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21.5 }
-        ]
-      },
-      {
-        externalId: "bpcl-bengaluru-mysuru-exp",
-        source: "bpcl",
-        name: "BPCL eDrive - Ramanagara Expressway Outlet (60kW DC)",
-        operator: "BPCL eDrive",
-        address: "Bengaluru-Mysuru Expressway, Ramanagara, Karnataka",
-        city: "Ramanagara",
-        state: "Karnataka",
-        pincode: "562159",
-        latitude: 12.7214,
-        longitude: 77.2811,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-        pricingInfo: "₹21/kWh + GST",
-        connectors: [
-          { externalId: "bpcl-ram-c1", type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 },
-          { externalId: "bpcl-ram-c2", type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 }
-        ]
-      },
-      {
-        externalId: "bpcl-chennai-bengaluru-nh44",
-        source: "bpcl",
-        name: "BPCL eDrive - Krishnagiri Highway Outlet (120kW DC)",
-        operator: "BPCL eDrive",
-        address: "NH-44 Bengaluru-Chennai Corridor, Krishnagiri, Tamil Nadu",
-        city: "Krishnagiri",
-        state: "Tamil Nadu",
-        pincode: "635001",
-        latitude: 12.5200,
-        longitude: 78.2100,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-        pricingInfo: "₹21/kWh + GST",
-        connectors: [
-          { externalId: "bpcl-k-c1", type: ConnectorType.CCS2, powerKw: 120, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 },
-          { externalId: "bpcl-k-c2", type: ConnectorType.CCS2, powerKw: 120, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 21 }
-        ]
-      },
-      {
-        externalId: "bpcl-ahmedabad-vadodara-ne1",
-        source: "bpcl",
-        name: "BPCL eDrive - Anand NE-1 Expressway Outlet (60kW DC)",
-        operator: "BPCL eDrive",
-        address: "National Expressway 1, Anand Bypass, Gujarat",
-        city: "Anand",
-        state: "Gujarat",
-        pincode: "388001",
-        latitude: 22.5645,
-        longitude: 72.9289,
-        status: StationStatus.AVAILABLE,
-        operatingHours: "24/7",
-        amenities: ["RESTROOMS", "FOOD_COURT", "PARKING"],
-        pricingInfo: "₹20/kWh + GST",
-        connectors: [
-          { externalId: "bpcl-a-c1", type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 20 },
-          { externalId: "bpcl-a-c2", type: ConnectorType.CCS2, powerKw: 60, currentType: CurrentType.DC, status: ConnectorStatus.AVAILABLE, pricing: 20 }
-        ]
-      }
-    ];
   }
 }

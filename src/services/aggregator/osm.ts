@@ -28,7 +28,9 @@ export class OsmScraper implements ScraperEngine {
           "User-Agent": "FullChargeEV/1.0 (EV Charger Discovery Platform)"
         },
         body: `data=${encodeURIComponent(overpassQuery)}`,
-        signal: AbortSignal.timeout(15000)
+        // Must be >= the query's own [timeout:180] (180s) declared above, otherwise
+        // the client always aborts before the Overpass server can respond.
+        signal: AbortSignal.timeout(180000)
       });
       if (!response.ok) {
         throw new Error(`OSM Overpass API responded with status ${response.status}`);
@@ -139,32 +141,10 @@ export class OsmScraper implements ScraperEngine {
       }
     }
 
-    // Fallback: If no sockets are parsed but capacity is specified, generate default connectors
-    if (connectors.length === 0 && tags["capacity"]) {
-      const capacity = parseInt(tags["capacity"], 10);
-      if (!isNaN(capacity) && capacity > 0) {
-        // Try to guess from text tags or default to Wall Socket
-        for (let i = 0; i < capacity; i++) {
-          connectors.push({
-            externalId: `cap-${i}`,
-            type: ConnectorType.WALL_SOCKET,
-            currentType: CurrentType.AC,
-            status: ConnectorStatus.UNKNOWN,
-          });
-        }
-      }
-    }
-
-    // absolute fallback: at least one wall socket connector
-    if (connectors.length === 0) {
-      connectors.push({
-        externalId: "default",
-        type: ConnectorType.WALL_SOCKET,
-        currentType: CurrentType.AC,
-        status: ConnectorStatus.UNKNOWN,
-      });
-    }
-
+    // No fallbacks here on purpose. Untagged OSM nodes tell us nothing about
+    // connector type or count, and ConnectorType has no UNKNOWN member — so
+    // guessing "wall socket" would invent hardware and skew the connector-type
+    // breakdown in analytics. An empty list honestly means "OSM didn't say".
     return connectors;
   }
 

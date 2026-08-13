@@ -80,6 +80,21 @@ export interface NetworkStats {
 // Time Range Helpers
 // ===================================================================
 
+// All stations are in India. The production host runs with no TZ set (UTC),
+// so `Date#getHours()` would return the wrong hour and — since IST is UTC+5:30 —
+// would never even align to real Indian clock hours. Resolve the hour explicitly
+// in Asia/Kolkata instead. Hoisted once since it's invoked per-snapshot.
+const istHourFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Kolkata",
+  hour: "numeric",
+  hour12: false,
+});
+
+function getIstHour(date: Date): number {
+  // hour12:false can still yield "24" for midnight in some environments; normalize.
+  return parseInt(istHourFormatter.format(date), 10) % 24;
+}
+
 function getTimeRangeDate(range: string): Date {
   const now = Date.now();
   switch (range) {
@@ -185,7 +200,7 @@ export async function getStationBehavior(
   >();
 
   for (const snapshot of snapshots) {
-    const hour = new Date(snapshot.capturedAt).getHours();
+    const hour = getIstHour(new Date(snapshot.capturedAt));
 
     // Station status counts
     switch (snapshot.status) {
