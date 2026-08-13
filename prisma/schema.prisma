@@ -171,6 +171,23 @@ model ConnectorSnapshot {
   currentType       CurrentType
   status            ConnectorStatus
   capturedAt        DateTime         @default(now())
+
+  @@index([stationSnapshotId])
+  @@index([capturedAt])
+}
+
+model SyncRun {
+  id                String    @id @default(cuid())
+  startedAt         DateTime  @default(now())
+  finishedAt        DateTime?
+  totalRaw          Int       @default(0)
+  totalDeduplicated Int       @default(0)
+  snapshotsCaptured Int       @default(0)
+  saveErrors        Int       @default(0)
+  scraperResults    Json
+  error             String?   @db.Text
+
+  @@index([startedAt])
 }
 
 enum ConnectorType {

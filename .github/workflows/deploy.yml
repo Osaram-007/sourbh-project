@@ -1,0 +1,42 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  build:
+    name: Build & typecheck
+    runs-on: ubuntu-latest
+    # prisma.config.ts requires DATABASE_URL to be set just to load the config
+    # (prisma generate/validate don't actually connect to it) — dummy value only.
+    env:
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma validate
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  deploy:
+    name: Deploy to VM
+    needs: build
+    runs-on: [self-hosted, full-charge-vm]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        run: bash deploy/deploy.sh

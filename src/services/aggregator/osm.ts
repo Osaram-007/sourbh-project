@@ -27,7 +27,8 @@ export class OsmScraper implements ScraperEngine {
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "FullChargeEV/1.0 (EV Charger Discovery Platform)"
         },
-        body: `data=${encodeURIComponent(overpassQuery)}`
+        body: `data=${encodeURIComponent(overpassQuery)}`,
+        signal: AbortSignal.timeout(15000)
       });
       if (!response.ok) {
         throw new Error(`OSM Overpass API responded with status ${response.status}`);

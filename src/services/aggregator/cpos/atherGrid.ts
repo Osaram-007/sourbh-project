@@ -1,4 +1,4 @@
-import { ScrapedStation, ScrapedConnector, ScraperEngine } from "../types";
+import { ScrapedStation, ScrapedConnector, ScraperEngine, parseNumeric } from "../types";
 import { db } from "@/lib/db";
 import { ConnectorType, CurrentType, StationStatus, ConnectorStatus, CredentialStatus } from "@prisma/client";
 
@@ -64,7 +64,7 @@ export class AtherGridScraper implements ScraperEngine {
       const connectors: ScrapedConnector[] = (item.chargers || []).map((c: any) => ({
         externalId: String(c.id),
         type: ConnectorType.TYPE2,
-        powerKw: parseFloat(c.power) || 3.3,
+        powerKw: parseNumeric(c.power),
         currentType: CurrentType.AC,
         status: c.status === "available" ? ConnectorStatus.AVAILABLE : ConnectorStatus.OCCUPIED,
         pricing: parseFloat(item.pricing) || 0,

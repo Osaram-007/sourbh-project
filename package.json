@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "setup": "powershell -ExecutionPolicy Bypass -File ./setup.ps1",
+    "setup:sh": "bash ./setup.sh",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync:worker": "tsx scripts/sync-worker.ts"
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^2.1.1",

@@ -6,14 +6,31 @@ import { db } from "@/lib/db";
 // Source hierarchy priority: lower index = higher priority
 const SOURCE_PRIORITY = ["tata", "ather", "bpcl", "chargezone", "statiq", "ocm", "evyatra", "osm"];
 
+// Rough India bounding box — rejects NaN/garbage coordinates from scraper parse failures
+// before they become permanently invisible rows in Postgres.
+function hasValidCoordinates(station: ScrapedStation): boolean {
+  const { latitude, longitude } = station;
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    latitude >= 6 && latitude <= 38 &&
+    longitude >= 68 && longitude <= 98
+  );
+}
+
 export class DeduplicationEngine {
   /**
    * Deduplicates a list of scraped stations using a grid-based spatial search.
    * Stations within 50 meters of each other are merged.
    */
   static deduplicate(stations: ScrapedStation[]): ScrapedStation[] {
-    console.log(`Deduplicating ${stations.length} stations...`);
-    
+    const validStations = stations.filter(hasValidCoordinates);
+    const droppedCount = stations.length - validStations.length;
+    if (droppedCount > 0) {
+      console.warn(`Dropped ${droppedCount} stations with invalid coordinates.`);
+    }
+    console.log(`Deduplicating ${validStations.length} stations...`);
+
     // Grid size: ~0.0005 degrees latitude/longitude is roughly 50 meters
     // We group by grid cells to avoid O(N^2) comparison.
     // cell size: ~500 meters (0.005 degrees) to find 50m neighbors safely.
@@ -28,7 +45,7 @@ export class DeduplicationEngine {
 
     const mergedStations: ScrapedStation[] = [];
 
-    for (const station of stations) {
+    for (const station of validStations) {
       const key = getGridKey(station.latitude, station.longitude);
       
       // Get neighboring cells (9 cells total)
@@ -80,24 +97,16 @@ export class DeduplicationEngine {
     const primaryPriority = SOURCE_PRIORITY.indexOf(primary.source);
     const duplicatePriority = SOURCE_PRIORITY.indexOf(duplicate.source);
 
-    // If duplicate has higher priority (lower index), swap their roles
+    // If duplicate has higher priority (lower index), promote its fields onto primary
     if (duplicatePriority !== -1 && (primaryPriority === -1 || duplicatePriority < primaryPriority)) {
-      // Swap content
-      const tempSource = primary.source;
-      const tempExternalId = primary.externalId;
-      const tempName = primary.name;
-      const tempOperator = primary.operator;
-      const tempAddress = primary.address;
-      const tempStatus = primary.status;
-      const tempPricing = primary.pricingInfo;
-      const tempHours = primary.operatingHours;
-      const tempImage = primary.imageUrl;
-
       primary.source = duplicate.source;
       primary.externalId = duplicate.externalId;
       primary.name = duplicate.name;
       primary.operator = duplicate.operator;
       primary.address = duplicate.address;
+      primary.city = duplicate.city;
+      primary.state = duplicate.state;
+      primary.pincode = duplicate.pincode;
       primary.status = duplicate.status;
       primary.pricingInfo = duplicate.pricingInfo;
       primary.operatingHours = duplicate.operatingHours;
@@ -105,17 +114,6 @@ export class DeduplicationEngine {
 
       // Retain the connectors from the higher-priority source
       primary.connectors = duplicate.connectors;
-
-      // Put primary values into duplicate variables to merge in
-      duplicate.source = tempSource;
-      duplicate.externalId = tempExternalId;
-      duplicate.name = tempName;
-      duplicate.operator = tempOperator;
-      duplicate.address = tempAddress;
-      duplicate.status = tempStatus;
-      duplicate.pricingInfo = tempPricing;
-      duplicate.operatingHours = tempHours;
-      duplicate.imageUrl = tempImage;
     }
 
     // Merge amenities
@@ -144,11 +142,13 @@ export class DeduplicationEngine {
 
   /**
    * Persists deduplicated stations to the database in batched transactions.
+   * Returns the number of batches that failed to save (0 = clean run).
    */
-  static async saveToDatabase(stations: ScrapedStation[]): Promise<void> {
+  static async saveToDatabase(stations: ScrapedStation[]): Promise<number> {
     console.log(`Saving ${stations.length} stations to the database in batches...`);
     const BATCH_SIZE = 100;
-    
+    let failedBatches = 0;
+
     for (let i = 0; i < stations.length; i += BATCH_SIZE) {
       const batch = stations.slice(i, i + BATCH_SIZE);
       try {
@@ -218,10 +218,12 @@ export class DeduplicationEngine {
           }
         });
       } catch (err) {
+        failedBatches++;
         console.error(`Failed to save batch ${i} to ${i + BATCH_SIZE} to database:`, err);
       }
     }
 
-    console.log("Database save complete!");
+    console.log(`Database save complete! (${failedBatches} batch failures)`);
+    return failedBatches;
   }
 }

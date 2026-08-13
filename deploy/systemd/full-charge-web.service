@@ -1,0 +1,15 @@
+[Unit]
+Description=Full Charge - Web app (Next.js)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=fullcharge
+WorkingDirectory=/opt/full-charge
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

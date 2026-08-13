@@ -32,3 +32,13 @@ export interface ScraperEngine {
   name: string;
   scrape(): Promise<ScrapedStation[]>;
 }
+
+// Parses each candidate with parseFloat and returns the first finite result,
+// or undefined if none parse — never fabricates a placeholder number.
+export function parseNumeric(...values: unknown[]): number | undefined {
+  for (const v of values) {
+    const n = parseFloat(String(v));
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}

@@ -4,12 +4,8 @@ import "./globals.css";
 import AuthProvider from "@/providers/AuthProvider";
 import QueryProvider from "@/providers/QueryProvider";
 
-// Initialize auto-sync engine on server start (scrapes all CPOs every 30 min)
-if (typeof window === "undefined") {
-  import("@/services/aggregator/autoSync").then(({ initAutoSync }) => {
-    initAutoSync();
-  });
-}
+// Data collection runs as a separate process — see `npm run sync:worker`
+// and deploy/systemd/full-charge-sync.service — independent of the web app.
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

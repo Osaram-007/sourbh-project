@@ -18,7 +18,7 @@ export class OcmScraper implements ScraperEngine {
     const url = `https://api.openchargemap.org/v3/poi/?output=json&countrycode=IN&maxresults=5000&compact=true&verbose=false&key=${this.apiKey}`;
     
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
       if (!response.ok) {
         throw new Error(`OCM API responded with status ${response.status}`);
       }

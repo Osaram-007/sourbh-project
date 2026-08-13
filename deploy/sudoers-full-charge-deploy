@@ -1,0 +1,10 @@
+# Lets the fullcharge user (which the self-hosted CI runner and app both run
+# as) restart the two app services without a password prompt — needed since
+# the deploy runs non-interactively. Scoped to exactly these two commands,
+# nothing broader.
+#
+# Install with:
+#   sudo install -m 0440 deploy/sudoers-full-charge-deploy /etc/sudoers.d/full-charge-deploy
+#   sudo visudo -cf /etc/sudoers.d/full-charge-deploy
+fullcharge ALL=(root) NOPASSWD: /usr/bin/systemctl restart full-charge-web
+fullcharge ALL=(root) NOPASSWD: /usr/bin/systemctl restart full-charge-sync

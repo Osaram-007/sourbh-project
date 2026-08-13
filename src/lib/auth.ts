@@ -16,10 +16,17 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials) return null;
-        
+
+        const isProd = process.env.NODE_ENV === "production";
         const email = credentials.email || "user@example.com";
-        const role = (credentials.role || "ADMIN").toUpperCase();
-        
+        // In production, the role field submitted at login is never trusted:
+        // new users are always USER, and an existing user's role is never
+        // mutated by logging in. Promote the first admin via a direct DB
+        // update instead — this is the fix for a login-time privilege
+        // escalation bug (anyone could log in as ADMIN for any email).
+        const requestedRole = (credentials.role || "USER").toUpperCase();
+        const role = !isProd && requestedRole === "ADMIN" ? "ADMIN" : "USER";
+
         // Find or create the user record dynamically in the database
         let user = await db.user.findUnique({ where: { email } });
         if (!user) {
@@ -27,16 +34,16 @@ export const authOptions: NextAuthOptions = {
             data: {
               email,
               name: email.split("@")[0],
-              role: role === "ADMIN" ? "ADMIN" : "USER"
+              role
             }
           });
-        } else if (user.role !== role) {
+        } else if (!isProd && user.role !== role) {
           user = await db.user.update({
             where: { id: user.id },
-            data: { role: role === "ADMIN" ? "ADMIN" : "USER" }
+            data: { role }
           });
         }
-        
+
         return {
           id: user.id,
           name: user.name,

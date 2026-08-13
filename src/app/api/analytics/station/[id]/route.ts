@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 import { getStationBehavior, getStationReliability } from "@/services/analytics/behaviorAnalysis";
 
 /**
@@ -38,7 +40,12 @@ export async function GET(
       return NextResponse.json(reliability);
     }
 
-    // Full behavior analysis
+    // Full behavior analysis is admin-only (heavier query, only used by the admin analytics page)
+    const session = await getServerSession(authOptions);
+    if (!session || (session.user as any)?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
+
     const behavior = await getStationBehavior(id, range);
     if (!behavior) {
       return NextResponse.json(
