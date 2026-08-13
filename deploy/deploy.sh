@@ -34,7 +34,10 @@ sudo systemctl restart full-charge-sync
 sudo systemctl restart full-charge-web
 
 sleep 5
-sudo systemctl is-active --quiet full-charge-sync && echo "full-charge-sync: active" || { echo "full-charge-sync: FAILED"; exit 1; }
-sudo systemctl is-active --quiet full-charge-web && echo "full-charge-web: active" || { echo "full-charge-web: FAILED"; exit 1; }
+# is-active is a read-only query — no sudo needed (and the sudoers rule only
+# allows `restart`, so `sudo systemctl is-active` would fail non-interactively
+# regardless, reporting a false failure even when the service is healthy).
+systemctl is-active --quiet full-charge-sync && echo "full-charge-sync: active" || { echo "full-charge-sync: FAILED"; exit 1; }
+systemctl is-active --quiet full-charge-web && echo "full-charge-web: active" || { echo "full-charge-web: FAILED"; exit 1; }
 
 echo "==> Deploy complete"
