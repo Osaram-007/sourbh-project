@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { buildLegacyStationsWhere } from "@/services/stations/legacyStationsWhere";
 import { Redis as UpstashRedis } from "@upstash/redis";
 import IORedis from "ioredis";
 
@@ -109,14 +110,7 @@ export async function GET(req: NextRequest) {
 
     // 3. Database Query
     const result = await db.station.findMany({
-      where: {
-        latitude: { gte: south, lte: north },
-        longitude: { gte: west, lte: east },
-        ...(providers.length > 0 ? { source: { in: providers } } : {}),
-        ...(status ? { status: status as any } : {}),
-        ...(connectors.length > 0 ? { connectors: { some: { type: { in: connectors as any } } } } : {}),
-        ...(speeds.length > 0 ? { connectors: { some: { currentType: { in: speeds as any } } } } : {})
-      },
+      where: buildLegacyStationsWhere({ north, south, east, west, providers, connectors, speeds, status }),
       include: {
         connectors: true
       },
