@@ -94,13 +94,16 @@ async function releaseSyncLock(client: pg.Client): Promise<void> {
 
 export async function runSync(): Promise<SyncResult> {
   if (syncInProgress) {
-    return lastSyncResult || {
-      timestamp: new Date().toISOString(),
-      totalRaw: 0,
-      totalDeduplicated: 0,
-      snapshotsCaptured: 0,
-      saveErrors: 0,
-      scraperResults: [],
+    // Always marked skipped: the previous run's result carries no error, so callers would take it for a run.
+    return {
+      ...(lastSyncResult ?? {
+        timestamp: new Date().toISOString(),
+        totalRaw: 0,
+        totalDeduplicated: 0,
+        snapshotsCaptured: 0,
+        saveErrors: 0,
+        scraperResults: [],
+      }),
       error: SYNC_ALREADY_IN_PROGRESS_ERROR,
     };
   }
