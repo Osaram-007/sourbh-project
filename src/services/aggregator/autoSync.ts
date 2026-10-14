@@ -40,6 +40,10 @@ const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 // Postgres advisory-lock key that serialises sync runs across processes (worker + web).
 export const SYNC_LOCK_KEY = 0x464353594e43; // ASCII "FCSYNC"
 
+// `error` of a runSync() result for a run skipped without scraping. Callers match these, not literals.
+export const SYNC_ALREADY_IN_PROGRESS_ERROR = "Sync already in progress";
+export const SYNC_LOCK_UNAVAILABLE_ERROR = "Sync lock unavailable";
+
 export function getLastSyncResult(): SyncResult | null {
   return lastSyncResult;
 }
@@ -97,7 +101,7 @@ export async function runSync(): Promise<SyncResult> {
       snapshotsCaptured: 0,
       saveErrors: 0,
       scraperResults: [],
-      error: "Sync already in progress",
+      error: SYNC_ALREADY_IN_PROGRESS_ERROR,
     };
   }
 
@@ -120,11 +124,11 @@ export async function runSync(): Promise<SyncResult> {
       // Fail closed: without the lock another process may be scraping at the same time.
       // Logs the error object, not .message: a refused connection is an AggregateError with an empty message.
       console.error("[AutoSync] Could not take the sync lock, skipping this run:", err);
-      return { ...result, error: "Sync lock unavailable" };
+      return { ...result, error: SYNC_LOCK_UNAVAILABLE_ERROR };
     }
     if (!lockClient) {
       console.log("[AutoSync] Another process is already syncing, skipping this run.");
-      return { ...result, error: "Sync already in progress" };
+      return { ...result, error: SYNC_ALREADY_IN_PROGRESS_ERROR };
     }
 
     // Taken once the lock is held, so every station saved from here on was written by this run.
@@ -237,6 +241,17 @@ export async function runSync(): Promise<SyncResult> {
   }
 
   return result;
+}
+
+/**
+ * HTTP status a caller that triggers a sync must answer with when runSync() skipped the run
+ * without scraping: 409 if another sync already holds the run, 503 if the lock could not be taken.
+ * null means the run executed, so its result is reported as usual.
+ */
+export function getSyncSkipStatus(result: SyncResult): 409 | 503 | null {
+  if (result.error === SYNC_ALREADY_IN_PROGRESS_ERROR) return 409;
+  if (result.error === SYNC_LOCK_UNAVAILABLE_ERROR) return 503;
+  return null;
 }
 
 /**
