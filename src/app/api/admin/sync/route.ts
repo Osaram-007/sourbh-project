@@ -6,6 +6,7 @@ import {
   getLastSyncResult,
   isSyncInProgress,
   getNextSyncTime,
+  getSyncSkipStatus,
 } from "@/services/aggregator/autoSync";
 
 // GET: Return last sync status (public — only returns timestamps and counts)
@@ -24,6 +25,14 @@ export async function GET() {
   }
 }
 
+// 409 for a sync already running here (pre-check) or in another process (run skipped on the sync lock)
+function syncAlreadyInProgress() {
+  return NextResponse.json(
+    { error: "Sync is already in progress", lastSync: getLastSyncResult() },
+    { status: 409 }
+  );
+}
+
 // POST: Trigger manual sync
 export async function POST(req: NextRequest) {
   try {
@@ -33,13 +42,23 @@ export async function POST(req: NextRequest) {
     }
 
     if (isSyncInProgress()) {
-      return NextResponse.json(
-        { error: "Sync is already in progress", lastSync: getLastSyncResult() },
-        { status: 409 }
-      );
+      return syncAlreadyInProgress();
     }
 
     const result = await runSync();
+
+    // runSync() skips without scraping when another process holds the sync lock or the lock cannot
+    // be taken. That is not a completed sync, so it must not be reported as one.
+    const skipStatus = getSyncSkipStatus(result);
+    if (skipStatus === 409) {
+      return syncAlreadyInProgress();
+    }
+    if (skipStatus === 503) {
+      return NextResponse.json(
+        { error: "Sync could not start, try again shortly" },
+        { status: 503 }
+      );
+    }
 
     return NextResponse.json({
       success: true,

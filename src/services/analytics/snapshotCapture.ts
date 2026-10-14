@@ -2,24 +2,30 @@ import { db } from "@/lib/db";
 import { randomUUID } from "node:crypto";
 
 /**
- * Captures a point-in-time snapshot of all stations and their connectors.
- * Called after each successful sync cycle to build historical time-series data
- * for per-charger behavior analysis.
+ * Captures a point-in-time snapshot of the stations saved since `since` and their connectors.
+ * Called after each sync cycle with that cycle's start time, to build historical time-series
+ * data for per-charger behavior analysis.
+ *
+ * Only stations whose `lastSynced` is at or after `since` are recorded: those are the rows the
+ * cycle's successful scrapers just upserted. A station whose source failed this cycle, or that
+ * vanished from its source, keeps an older `lastSynced` and is skipped, so its stale status is
+ * never re-recorded as a fresh observation.
  *
  * Uses bulk createMany with pre-generated UUIDs to execute in milliseconds
  * instead of tens of thousands of individual insert queries.
  */
-export async function captureSnapshots(syncSource: string = "scheduled"): Promise<number> {
+export async function captureSnapshots(syncSource: string, since: Date): Promise<number> {
   console.log("[SnapshotCapture] Starting bulk snapshot capture...");
   const startTime = Date.now();
 
-  // Fetch all current stations with their connectors
+  // Fetch the stations saved this cycle with their connectors
   const stations = await db.station.findMany({
+    where: { lastSynced: { gte: since } },
     include: { connectors: true },
   });
 
   if (stations.length === 0) {
-    console.log("[SnapshotCapture] No stations found to snapshot.");
+    console.log("[SnapshotCapture] No stations saved this cycle to snapshot.");
     return 0;
   }
 
