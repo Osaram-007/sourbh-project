@@ -71,25 +71,18 @@ try {
     Write-Warn "Prisma Client generation encountered an issue."
 }
 
-# 5. Database Migration & PostGIS Setup
-Write-Step "Pushing database schema & PostGIS triggers..."
+# 5. Database Migrations
+Write-Step "Applying database migrations..."
 try {
-    npx prisma db push
+    npx prisma migrate deploy
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "Database schema pushed."
-        
-        Write-Step "Initializing PostGIS extensions & spatial triggers..."
-        npx tsx scripts/db-init.ts
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "PostGIS spatial triggers initialized successfully."
-        } else {
-            Write-Warn "PostGIS setup script completed with warnings. Ensure PostgreSQL has the PostGIS extension enabled."
-        }
+        Write-Success "Database migrations applied."
     } else {
-        Write-Warn "Could not connect to PostgreSQL database to push schema. Check your DATABASE_URL in .env."
+        Write-Warn "Could not apply database migrations. Check your DATABASE_URL in .env."
+        Write-Warn "If this database was created earlier by 'prisma db push', run 'npx prisma migrate reset' (destroys local data), or 'npx prisma migrate resolve --applied 0_init' if its schema already matches."
     }
 } catch {
-    Write-Warn "Database push skipped or failed. Ensure your PostgreSQL server is running and DATABASE_URL in .env is correct."
+    Write-Warn "Database migration skipped or failed. Ensure your PostgreSQL server is running and DATABASE_URL in .env is correct."
 }
 
 # 6. Complete

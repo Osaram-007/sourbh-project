@@ -43,18 +43,14 @@ echo -e "\n[+] Generating Prisma Client..."
 npx prisma generate
 echo "[SUCCESS] Prisma Client generated."
 
-# 5. Database Migration & PostGIS Setup
-echo -e "\n[+] Pushing database schema & PostGIS triggers..."
-if npx prisma db push; then
-    echo "[SUCCESS] Database schema pushed."
-    echo -e "\n[+] Initializing PostGIS extensions & spatial triggers..."
-    if npx tsx scripts/db-init.ts; then
-        echo "[SUCCESS] PostGIS spatial triggers initialized successfully."
-    else
-        echo "[WARNING] PostGIS setup script completed with warnings."
-    fi
+# 5. Database Migrations
+echo -e "\n[+] Applying database migrations..."
+if npx prisma migrate deploy; then
+    echo "[SUCCESS] Database migrations applied."
 else
-    echo "[WARNING] Database push failed. Verify PostgreSQL is running and check DATABASE_URL in .env."
+    echo "[WARNING] Database migration failed. Verify PostgreSQL is running and check DATABASE_URL in .env."
+    echo "[WARNING] If this database was created earlier by 'prisma db push', run 'npx prisma migrate reset' (destroys local data),"
+    echo "          or 'npx prisma migrate resolve --applied 0_init' if its schema already matches."
 fi
 
 echo -e "\n=================================================================="
