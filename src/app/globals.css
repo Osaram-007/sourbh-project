@@ -16,7 +16,8 @@
  * FullCharge design tokens (WEB-A01). Light theme only; dark is deferred.
  * `static` emits every variable, so JS/SVG/map markers can use var(--...) without a utility class.
  * New names only: the legacy dark/glass app above and below is untouched until WEB-B14.
- * tests/web/contrast.test.ts reads this block, so every colour must stay a 6-digit hex (or a var() alias of one).
+ * tests/web/contrast.test.ts reads this block: every colour it checks must be a 6-digit hex or a var() alias of one.
+ * Derived tokens (--color-brand-hover is a color-mix) are not checked; they are only ever darker than their source.
  * Spacing scale = Tailwind's default 4px step (--spacing); only semantic aliases are added here.
  */
 @theme static {
@@ -94,10 +95,6 @@
   /* The ping halo is decorative; frozen it would be a solid 75% disc, so hide it. */
   .animate-ping {
     display: none;
-  }
-
-  html {
-    scroll-behavior: auto;
   }
 }
 

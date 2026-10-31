@@ -4,10 +4,10 @@
  *
  * Four states only. No station-level "In use" and no "Maintenance" in V1.
  * Status is always colour + icon + word (WL-A11Y-3), never colour alone.
- * Keys match AvailabilityState from the T1-05 availability service.
+ * Keys match AvailabilityState from the T1-05 availability service (not the Prisma StationStatus enum, which has other values).
  */
 
-export type StationStatus = "AVAILABLE" | "LIMITED" | "UNAVAILABLE" | "UNKNOWN";
+export type AvailabilityState = "AVAILABLE" | "LIMITED" | "UNAVAILABLE" | "UNKNOWN";
 
 /** lucide-react export names. Distinct silhouettes: circle+check, triangle, octagon, circle+question mark. */
 export type StatusIconName = "CircleCheck" | "TriangleAlert" | "OctagonX" | "CircleQuestionMark";
@@ -15,40 +15,40 @@ export type StatusIconName = "CircleCheck" | "TriangleAlert" | "OctagonX" | "Cir
 export interface StatusEntry {
   /** Plain-English word shown next to the icon. */
   label: string;
-  /** One short line for legends and the landing cards. Matches the DN-9 meaning of each state. */
+  /** One short line for legends and the landing cards. Draft copy: the founder may edit it (Q-W13). */
   description: string;
   /** CSS variable name, defined in src/app/globals.css (the contrast test checks it). */
   token: `--color-status-${string}`;
-  /** Ready for `style`/SVG fill. In class names use the Tailwind utility, e.g. `bg-status-available`. */
+  /** For `style` or an SVG fill. Never build a Tailwind class name from a state: classes must appear literally to be generated. */
   color: `var(--color-status-${string})`;
   icon: StatusIconName;
 }
 
-export const STATUS: Record<StationStatus, StatusEntry> = {
+export const STATUS: Record<AvailabilityState, StatusEntry> = {
   AVAILABLE: {
     label: "Available",
-    description: "Ready to charge.",
+    description: "The network reports free connectors.",
     token: "--color-status-available",
     color: "var(--color-status-available)",
     icon: "CircleCheck",
   },
   LIMITED: {
     label: "Limited",
-    description: "Some connectors are free.",
+    description: "Some connectors are free, but fewer than half.",
     token: "--color-status-limited",
     color: "var(--color-status-limited)",
     icon: "TriangleAlert",
   },
   UNAVAILABLE: {
     label: "Unavailable",
-    description: "Not currently available.",
+    description: "No connectors are free, or the network reports the charger offline.",
     token: "--color-status-unavailable",
     color: "var(--color-status-unavailable)",
     icon: "OctagonX",
   },
   UNKNOWN: {
     label: "Status unknown",
-    description: "No recent availability information.",
+    description: "We have no recent status for this charger.",
     token: "--color-status-unknown",
     color: "var(--color-status-unknown)",
     icon: "CircleQuestionMark",
@@ -56,4 +56,4 @@ export const STATUS: Record<StationStatus, StatusEntry> = {
 };
 
 /** Display order for legends and the landing cards. */
-export const STATUS_ORDER: readonly StationStatus[] = ["AVAILABLE", "LIMITED", "UNAVAILABLE", "UNKNOWN"];
+export const STATUS_ORDER: readonly AvailabilityState[] = ["AVAILABLE", "LIMITED", "UNAVAILABLE", "UNKNOWN"];

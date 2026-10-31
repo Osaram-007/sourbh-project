@@ -41,14 +41,14 @@ function ratio(fg: string, bg: string): number {
 const TEXT = 4.5; // normal text
 const UI = 3; // large text, icons, borders, focus ring
 
-const SURFACES = ["--color-surface", "--color-mint"];
+const SURFACES = ["--color-surface", "--color-mint", "--color-surface-muted"];
 const statusTokens = STATUS_ORDER.map((s) => STATUS[s].token);
 
 // [foreground, background, minimum ratio]
 const pairs: [string, string, number][] = [
   // Text on every surface it can sit on.
   ...(["--color-ink", "--color-ink-muted", "--color-brand"] as const).flatMap((fg) =>
-    [...SURFACES, "--color-surface-muted"].map((bg): [string, string, number] => [fg, bg, TEXT]),
+    SURFACES.map((bg): [string, string, number] => [fg, bg, TEXT]),
   ),
   ["--color-on-brand", "--color-brand", TEXT], // primary button label
   // Non-text: status colours (icon, dot, marker) on white and mint, and the white marker glyph on the status colour.
