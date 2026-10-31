@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 
@@ -9,14 +10,25 @@ const runNext = path.join(root, "tests", "web", "helpers", "run-next.cjs"); // `
 const BUILD_TIMEOUT_MS = 8 * 60_000;
 const START_TIMEOUT_MS = 60_000;
 
+const win = process.platform === "win32";
+
+/** Only what the OS and Node need to run a process. Everything else the caller has (secrets, CI vars, NODE_OPTIONS) is dropped. */
+const OS_ENV = win ? ["PATH", "SystemRoot", "TEMP", "TMP"] : ["PATH", "HOME", "TMPDIR", "LANG"];
+
 /**
- * Obvious dummy values so `next build` / `next start` boot with no database and no real secrets.
- * They are set explicitly (never inherited) because Next also reads `.env*` and the caller's shell,
- * and the e2e server must never touch a real DB, Redis, OCM or Maps account.
+ * The server's whole environment: the OS allowlist, `SITE_NOINDEX` (the one named pass-through, left out
+ * entirely when the caller has not set it), and obvious dummy values so `next build` / `next start` boot
+ * with no database and no real secrets. Never spread `process.env` here: a real DB, Redis, OCM, Maps or
+ * Firebase credential in the caller's shell must not reach the e2e server.
  */
-function testEnv(baseUrl: string): NodeJS.ProcessEnv {
+export function testEnv(baseUrl: string): NodeJS.ProcessEnv {
+  const inherited: Record<string, string> = {};
+  for (const name of [...OS_ENV, "SITE_NOINDEX"]) {
+    const v = process.env[name];
+    if (v !== undefined) inherited[name] = v;
+  }
   return {
-    ...process.env,
+    ...inherited,
     NODE_ENV: "production",
     NEXT_TELEMETRY_DISABLED: "1",
     DATABASE_URL: "postgresql://e2e:e2e@127.0.0.1:1/e2e-no-database", // port 1: connect refuses fast
@@ -24,14 +36,25 @@ function testEnv(baseUrl: string): NodeJS.ProcessEnv {
     NEXTAUTH_URL: baseUrl,
     NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: "e2e-dummy-maps-key",
     SYNC_SECRET_KEY: "e2e-dummy-sync-key",
-    OCM_API_KEY: "",
-    REDIS_URL: "",
-    UPSTASH_REDIS_REST_URL: "",
-    UPSTASH_REDIS_REST_TOKEN: "",
   };
 }
 
-const win = process.platform === "win32";
+/**
+ * Next loads `.env*` from the working directory, which would hand real values to the server.
+ * Refuse to run if any exists (`.env.example` is fine). Looks at directory entries only; never reads a file.
+ */
+export function assertNoEnvFiles(dir: string = root): void {
+  const found = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => /^\.env(\..+)?$/.test(e.name) && e.name !== ".env.example" && !e.isDirectory())
+    .map((e) => e.name);
+  if (found.length) {
+    throw new Error(
+      `Refusing to start the e2e server: ${found.join(", ")} found in ${dir}. Next would load it and the server could read real secrets. ` +
+        `Run the e2e tests from a checkout without .env files (e.g. a clean worktree).`,
+    );
+  }
+}
 
 function run(args: string[], env: NodeJS.ProcessEnv) {
   const child = spawn(process.execPath, [runNext, ...args], {
@@ -101,6 +124,7 @@ export interface TestServer {
 
 /** Build once (unless E2E_SKIP_BUILD is set), then `next start` on a free loopback port. */
 export async function startServer(): Promise<TestServer> {
+  assertNoEnvFiles();
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const env = testEnv(baseUrl);
