@@ -67,3 +67,14 @@ Add to the `fullcharge` user's crontab (`sudo -u fullcharge crontab -e`):
 At 15-minute snapshots and ~20k stations / ~50k connectors, expect roughly **1.1 GB/day / ~33
 GB/month** of snapshot rows. Put Postgres data on its own EBS volume sized for at least 6–12
 months of headroom, and set a CloudWatch disk-usage alarm at ~70%.
+
+## T0-04: admin allowlist (`ADMIN_EMAILS`)
+
+Set `ADMIN_EMAILS` in `/opt/full-charge/.env` to the owner's email before this release goes out
+(comma-separated for several; matching is case-insensitive). Admin access needs the DB role
+`ADMIN` **and** the email on this list. The web service reads `.env` at start, so restart
+`full-charge-web` after changing it.
+
+**If `ADMIN_EMAILS` is missing or empty, nobody is admin: the owner is locked out of `/admin`.**
+`/api/admin/*` and `/api/analytics/*` all return 403, so the admin pages load but show no data
+and the sync and credentials controls fail. `/api/sync` is unaffected, it uses `SYNC_SECRET_KEY`.

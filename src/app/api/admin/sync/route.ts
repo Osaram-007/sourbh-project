@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/guards";
+import { publicSyncResult } from "@/app/api/admin/syncView";
 import {
   runSync,
   getLastSyncResult,
@@ -8,14 +9,14 @@ import {
   getSyncSkipStatus,
 } from "@/services/aggregator/autoSync";
 
-// GET: Return last sync status (admin only: includes scraper names and failure messages)
+// GET: Return last sync status (admin only: includes scraper names; failures show fixed text only)
 export async function GET() {
   try {
     const auth = await requireAdmin();
     if (!auth.ok) return auth.response;
 
     return NextResponse.json({
-      lastSync: getLastSyncResult(),
+      lastSync: publicSyncResult(getLastSyncResult()),
       syncInProgress: isSyncInProgress(),
       nextSyncAt: getNextSyncTime()?.toISOString() || null,
     });
@@ -31,7 +32,7 @@ export async function GET() {
 // 409 for a sync already running here (pre-check) or in another process (run skipped on the sync lock)
 function syncAlreadyInProgress() {
   return NextResponse.json(
-    { error: "Sync is already in progress", lastSync: getLastSyncResult() },
+    { error: "Sync is already in progress", lastSync: publicSyncResult(getLastSyncResult()) },
     { status: 409 }
   );
 }
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      result,
+      result: publicSyncResult(result),
     });
   } catch (error) {
     console.error("Admin sync API error:", error);
