@@ -78,3 +78,5 @@ Set `ADMIN_EMAILS` in `/opt/full-charge/.env` to the owner's email before this r
 **If `ADMIN_EMAILS` is missing or empty, nobody is admin: the owner is locked out of `/admin`.**
 `/api/admin/*` and `/api/analytics/*` all return 403, so the admin pages load but show no data
 and the sync and credentials controls fail. `/api/sync` is unaffected, it uses `SYNC_SECRET_KEY`.
+
+Failure details are not sent to the admin panel or to API callers (`/api/admin/*`, `/api/sync`); read them in the service logs. Scheduled scrapes log to `full-charge-sync` (`journalctl -u full-charge-sync`), manual ones (Trigger Sync in `/admin`, `POST /api/sync`) to `full-charge-web`.

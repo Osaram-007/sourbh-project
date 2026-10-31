@@ -171,6 +171,22 @@ describe("publicSyncResult()", () => {
     );
   });
 
+  it("drops any field it does not know, at the top level and on a scraper (explicit field list)", () => {
+    const withExtras = {
+      ...result({ error: SAVE_ERROR }),
+      rawError: SAVE_ERROR,
+      debug: { token: "SECRET-TOKEN-abc" },
+      scraperResults: [{ name: "OCM", count: 1, status: "Success", durationMs: 5, rawResponse: "SECRET-BODY", stack: SCRAPER_ERROR }],
+    } as unknown as SyncResult;
+    const out = view.publicSyncResult(withExtras)!;
+    assert.deepEqual(Object.keys(out).sort(), [
+      "error", "saveErrors", "scraperResults", "snapshotsCaptured", "timestamp", "totalDeduplicated", "totalRaw",
+    ]);
+    assert.deepEqual(Object.keys(out.scraperResults[0]).sort(), ["count", "durationMs", "name", "status"]);
+    const text = JSON.stringify(out);
+    assert.ok(!text.includes("SECRET-BODY") && !text.includes("SECRET-TOKEN-abc") && !text.includes("rawError"));
+  });
+
   it("does not touch the stored result: the details must stay available to the server logs", () => {
     const stored = result({ error: SAVE_ERROR });
     const before = structuredClone(stored);
@@ -262,7 +278,8 @@ describe("sync routes send no raw failure text", () => {
     assert.equal(res.status, 200);
     const text = await res.text();
     assertClean(text);
-    const { result } = JSON.parse(text);
+    const { success, result } = JSON.parse(text);
+    assert.equal(success, false, "a run that failed to save must not be reported as a success");
     assert.equal(result.scraperResults.length, 8);
     for (const s of result.scraperResults) assert.notEqual(s.status, "Success");
     assert.equal(typeof result.error, "string");

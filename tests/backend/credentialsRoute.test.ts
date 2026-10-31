@@ -4,7 +4,8 @@
  *
  *  - GET returns masked rows. A stored CrawlerLog.message can embed a token (fetch puts a bad header
  *    value into its error text), so log rows expose only id, statusCode, timestamp and a fixed
- *    message, never the stored text.
+ *    message chosen by statusCode (401/403 "Token rejected", else "Crawler failed"), never the
+ *    stored text.
  *  - POST validates the whole payload before the upsert: control characters, non-Latin-1, wrong
  *    types, bad header/cookie maps, unparseable dates and non-object bodies all give 400, with no
  *    database access, nothing echoed and nothing logged. Valid payloads keep working.
@@ -126,13 +127,37 @@ describe("GET: stored crawler log text never reaches the client", () => {
     );
   });
 
-  it("the message is a fixed string: rows with different stored text get the same one", async () => {
-    setDbResult("cpoCredential.findMany", [credentialRow()]);
-    const rows = (await (await credentials.GET()).json()) as Array<{ errorLogs: Array<{ message: string }> }>;
-    const [first, second] = rows[0].errorLogs.map((l) => l.message);
-    assert.ok(first.length > 0);
-    assert.equal(first, second);
-    assert.notEqual(first, STORED);
+  it("the message is fixed text chosen by statusCode alone: 401 and 403 mean a rejected token, anything else a failed crawl", async () => {
+    const log = (id: string, statusCode: number, message: string) => ({
+      id,
+      cpoCredentialId: "c1",
+      statusCode,
+      message,
+      timestamp: new Date("2026-10-30T09:00:00Z"),
+    });
+    setDbResult("cpoCredential.findMany", [
+      credentialRow({
+        errorLogs: [
+          log("a", 401, STORED),
+          log("b", 403, "Crawler failed: something else entirely"),
+          log("c", 500, STORED),
+          log("d", 500, "Authentication failed. Token expired or rejected."),
+          log("e", 429, "RAW-TOKEN-1"),
+          log("f", 200, "401"),
+        ],
+      }),
+    ]);
+    const rows = (await (await credentials.GET()).json()) as Array<{ errorLogs: Array<{ id: string; message: string }> }>;
+    const byId = Object.fromEntries(rows[0].errorLogs.map((l) => [l.id, l.message]));
+    assert.deepEqual(byId, {
+      a: "Token rejected, see server logs",
+      b: "Token rejected, see server logs",
+      c: "Crawler failed, see server logs",
+      d: "Crawler failed, see server logs",
+      e: "Crawler failed, see server logs",
+      f: "Crawler failed, see server logs",
+    });
+    assert.ok(!Object.values(byId).includes(STORED));
   });
 
   it("a credential row exposes only its masked fields", async () => {
@@ -182,6 +207,18 @@ describe("POST: invalid payloads are rejected with 400 before any database acces
       it(`rejects ${label}`, async () => assertRejected(await post(withField("authToken", value))));
     }
     it("rejects an empty string", async () => assertRejected(await post(withField("authToken", ""))));
+    it("rejects a token that is only whitespace, since it is empty once trimmed", async () => {
+      for (const blank of [" ", "   ", "\n", "\r\n", "\t \n"]) {
+        resetDb();
+        await assertRejected(await post(withField("authToken", blank)));
+      }
+    });
+    it("rejects a control character inside the token even when the ends are trimmed", async () => {
+      for (const value of ["ECHOME\nx\n", "  ECHOME\r\nX-Injected: 1  ", "ECHOME\u0000x\n"]) {
+        resetDb();
+        await assertRejected(await post(withField("authToken", value)));
+      }
+    });
     it("rejects a missing token", async () => assertRejected(await post(without("authToken"))));
   });
 
@@ -297,7 +334,7 @@ describe("POST: invalid payloads are rejected with 400 before any database acces
   });
 
   it("never writes: no upsert call across a mixed batch of bad payloads", async () => {
-    for (const body of [withField("authToken", "ECHOME\n"), withField("headers", ["x"]), withField("expiresAt", "nope")]) {
+    for (const body of [withField("authToken", "ECHOME\nx"), withField("headers", ["x"]), withField("expiresAt", "nope")]) {
       await post(body);
     }
     assert.deepEqual(callsTo("cpoCredential.upsert"), []);
@@ -357,11 +394,89 @@ describe("POST: valid payloads still work", () => {
       expiresAt: "2030-01-02T03:04:05Z",
     });
     assert.equal(res.status, 200);
-    const { create } = upsertArgs();
+    const { create, update } = upsertArgs();
     assert.equal(create.refreshToken, "ref-1");
     assert.deepEqual(create.headers, { Authorization: "Bearer abc.def==", "X-Custom_1.2": "a b; c=d", accept: "*/*" });
     assert.deepEqual(create.cookies, { sid: "abc123", "x-theme": "dark" });
     assert.deepEqual(create.expiresAt, new Date("2030-01-02T03:04:05Z"));
+    // The update branch (an existing credential being re-submitted) must carry the same values.
+    const { updatedAt, ...rest } = update;
+    assert.ok(updatedAt instanceof Date);
+    assert.deepEqual(rest, {
+      authToken: "Bearer abc.def==",
+      refreshToken: "ref-1",
+      headers: { Authorization: "Bearer abc.def==", "X-Custom_1.2": "a b; c=d", accept: "*/*" },
+      cookies: { sid: "abc123", "x-theme": "dark" },
+      expiresAt: new Date("2030-01-02T03:04:05Z"),
+      status: "ACTIVE",
+    });
+  });
+
+  it("trims the token before validating and stores the trimmed value, in create and update", async () => {
+    for (const [raw, stored] of [
+      ["tok-1\n", "tok-1"],
+      ["tok-1\r\n", "tok-1"],
+      ["  tok-1  ", "tok-1"],
+      ["\ttok-1\n\n", "tok-1"],
+      ["tok one", "tok one"],
+    ]) {
+      resetDb();
+      const res = await post({ cpoName: "tata", authToken: raw });
+      assert.equal(res.status, 200, `token ${JSON.stringify(raw)}`);
+      const { create, update } = upsertArgs();
+      assert.equal(create.authToken, stored);
+      assert.equal(update.authToken, stored);
+    }
+  });
+
+  it("every value it accepts is also accepted by fetch's own Headers (the 'fetch can send it' guarantee)", async () => {
+    // Table of values the handler must accept, then every single character U+0000..U+00FF between
+    // two letters: whatever the handler accepts has to pass new Headers(), the real validator.
+    const table = [
+      "tok-1",
+      "Bearer abc.def==",
+      "a b; c=d",
+      "*/*",
+      "café",
+      "tok-é-ÿ",
+      "aÿz",
+      " ".repeat(3) + "padded" + " ".repeat(3),
+      "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~",
+      "  and ~",
+      "a".repeat(4096),
+    ];
+    const probes = Array.from({ length: 256 }, (_, cp) => `a${String.fromCharCode(cp)}z`);
+    let accepted = 0;
+    for (const value of [...table, ...probes]) {
+      resetDb();
+      const res = await post({
+        cpoName: "tata",
+        authToken: value,
+        refreshToken: value,
+        headers: { "X-V": value },
+        cookies: { sid: value },
+      });
+      const isTable = table.includes(value);
+      if (res.status !== 200) {
+        assert.ok(!isTable, `the table value ${JSON.stringify(value)} was rejected with ${res.status}`);
+        continue;
+      }
+      accepted++;
+      const { create } = upsertArgs();
+      const h = create.headers as Record<string, string>;
+      const c = create.cookies as Record<string, string>;
+      for (const [name, v] of [
+        ["Authorization", `Bearer ${create.authToken}`],
+        ["X-Refresh", create.refreshToken as string],
+        ["X-V", h["X-V"]],
+        ["Cookie", `sid=${c.sid}`],
+      ]) {
+        assert.doesNotThrow(() => new Headers().append(name, v), `fetch's Headers rejects ${name}: ${JSON.stringify(v)}`);
+      }
+      assert.doesNotThrow(() => new Headers(h), `fetch's Headers rejects the stored headers for ${JSON.stringify(value)}`);
+    }
+    // Not vacuous: the table plus the printable and Latin-1 probes were accepted (95 + 128 probes).
+    assert.ok(accepted >= table.length + 95 + 128, `only ${accepted} values were accepted`);
   });
 
   it("accepts a numeric epoch for expiresAt", async () => {

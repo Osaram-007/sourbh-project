@@ -4,8 +4,10 @@ import { db } from "@/lib/db";
 import { CredentialStatus } from "@prisma/client";
 
 // Stored CrawlerLog.message text can embed secrets (fetch puts a bad header value into its error
-// text), so GET never returns it. Every row is a failure; the details stay in the server logs.
-const CRAWLER_FAILURE_TEXT = "Crawler failed, see server logs";
+// text), so GET never reads it. Every row is a failure; the text comes from the integer statusCode
+// alone and the details stay in the server logs.
+const failureText = (statusCode: number) =>
+  statusCode === 401 || statusCode === 403 ? "Token rejected, see server logs" : "Crawler failed, see server logs";
 
 export async function GET() {
   try {
@@ -34,7 +36,7 @@ export async function GET() {
       errorLogs: c.errorLogs.map(l => ({
         id: l.id,
         statusCode: l.statusCode,
-        message: CRAWLER_FAILURE_TEXT,
+        message: failureText(l.statusCode),
         timestamp: l.timestamp
       }))
     }));
@@ -83,7 +85,9 @@ export async function POST(req: NextRequest) {
       return bad("Invalid request body");
     }
 
-    const { cpoName, authToken, refreshToken, headers, cookies, expiresAt } = body as Record<string, unknown>;
+    const { cpoName, authToken: rawAuthToken, refreshToken, headers, cookies, expiresAt } = body as Record<string, unknown>;
+    // A pasted token often ends in a newline: trim it before validating. An embedded one is still rejected.
+    const authToken = typeof rawAuthToken === "string" ? rawAuthToken.trim() : rawAuthToken;
 
     if (typeof cpoName !== "string" || !cpoName.trim() || typeof authToken !== "string" || !authToken) {
       return bad("cpoName and authToken are required");

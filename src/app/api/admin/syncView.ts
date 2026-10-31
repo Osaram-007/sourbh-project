@@ -11,12 +11,19 @@ const FIXED_ERRORS = new Set<string>([SYNC_ALREADY_IN_PROGRESS_ERROR, SYNC_LOCK_
 
 export function publicSyncResult(r: SyncResult | null): SyncResult | null {
   if (!r) return null;
+  // Explicit fields, no spread: a field added to SyncResult later must be listed here to reach clients.
   return {
-    ...r,
-    error: r.error === undefined ? undefined : FIXED_ERRORS.has(r.error) ? r.error : "Sync failed",
+    timestamp: r.timestamp,
+    totalRaw: r.totalRaw,
+    totalDeduplicated: r.totalDeduplicated,
+    snapshotsCaptured: r.snapshotsCaptured,
+    saveErrors: r.saveErrors,
     scraperResults: r.scraperResults.map((s) => ({
-      ...s,
+      name: s.name,
+      count: s.count,
       status: s.status === "Success" ? "Success" : "Failed",
+      durationMs: s.durationMs,
     })),
+    error: r.error === undefined ? undefined : FIXED_ERRORS.has(r.error) ? r.error : "Sync failed",
   };
 }

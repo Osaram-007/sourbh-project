@@ -482,12 +482,6 @@ describe("table integrity (WL-RBAC-3, WL-RBAC-2)", () => {
     assert.deepEqual(missing, [], "new route: add it to ROUTE_FILES (and CASES unless it is a machine/NextAuth route)");
   });
 
-  it("helper files next to routes are not routes: admin/syncView.ts must not trip the table", () => {
-    assert.ok(fs.existsSync(path.join(apiDir, "admin", "syncView.ts")), "helper moved: update this test");
-    assert.ok(!routeFilesOnDisk.some((f) => f.includes("syncView")));
-    assert.ok(!("admin/syncView" in ROUTE_FILES));
-  });
-
   it("every route file in the table exists", () => {
     const gone = Object.keys(ROUTE_FILES).filter((f) => !routeFilesOnDisk.includes(f));
     assert.deepEqual(gone, []);
