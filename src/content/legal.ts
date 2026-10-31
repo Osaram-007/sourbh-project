@@ -147,12 +147,15 @@ export const legal: LegalConfig = {
   },
 };
 
-/** Where a value is missing: dotted paths of null or blank values, plus sections still marked draft. */
+const isBlank = (value: unknown) => value === null || (typeof value === "string" && value.trim() === "");
+
+/** Where a value is missing: dotted paths of null, blank or empty values, plus sections still marked draft. */
 export function pendingLegalItems(config: LegalConfig): string[] {
   const out: string[] = [];
   const walk = (value: unknown, path: string) => {
-    if (value === null || (typeof value === "string" && value.trim() === "")) out.push(`${path}: not set`);
-    else if (typeof value === "object") {
+    // An empty array, or one whose entries are all blank, is as missing as null (a heading with no text).
+    if (isBlank(value) || (Array.isArray(value) && value.every(isBlank))) out.push(`${path}: not set`);
+    else if (typeof value === "object" && value !== null) {
       for (const [key, child] of Object.entries(value)) {
         const id = (child as { id?: unknown } | null)?.id; // name sections by id, not array index
         walk(child, `${path}.${typeof id === "string" ? id : key}`);
