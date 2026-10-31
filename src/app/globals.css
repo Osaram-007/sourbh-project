@@ -12,6 +12,95 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/*
+ * FullCharge design tokens (WEB-A01). Light theme only; dark is deferred.
+ * `static` emits every variable, so JS/SVG/map markers can use var(--...) without a utility class.
+ * New names only: the legacy dark/glass app above and below is untouched until WEB-B14.
+ * tests/web/contrast.test.ts reads this block, so every colour must stay a 6-digit hex (or a var() alias of one).
+ * Spacing scale = Tailwind's default 4px step (--spacing); only semantic aliases are added here.
+ */
+@theme static {
+  /* Colour: text + surfaces */
+  --color-ink: #0b1f3a; /* navy: headings and body text */
+  --color-ink-muted: #475569; /* secondary text */
+  --color-surface: #ffffff;
+  --color-mint: #eef8f2; /* very light mint section/card tint */
+  --color-surface-muted: #f5f8fa; /* neutral grey tint */
+  --color-border: #dbe3ea; /* decorative dividers only (no contrast requirement) */
+  --color-border-strong: #748295; /* input/control borders, 3:1+ on surface and mint */
+
+  /* Colour: brand. Q-C8: the final hex is a one-line swap of --color-brand. #138a3e (reference) is only 4.44:1 on white. */
+  --color-brand: #0f7d38;
+  --color-brand-hover: color-mix(in srgb, var(--color-brand) 85%, black);
+  --color-on-brand: #ffffff;
+
+  /* Colour: availability (ADR-0020). Mapped to states in src/lib/status.ts; nothing else may define these. */
+  --color-status-available: #18913f;
+  --color-status-limited: #d96a00;
+  --color-status-unavailable: #d92d20;
+  --color-status-unknown: #778291;
+
+  /* Focus ring (WL-A11Y-4: at least 2px). Opt in with the `focus-ring` utility below. */
+  --color-focus: var(--color-ink);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* Type scale: the smallest step is 14px (WL-A11Y-9). Size utilities: text-body-sm, text-body, ... */
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.25rem;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+  --text-lead: 1.125rem;
+  --text-lead--line-height: 1.75rem;
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.75rem;
+  --text-heading: 1.75rem;
+  --text-heading--line-height: 2.25rem;
+  --text-display: clamp(2rem, 1.2rem + 3.5vw, 3.5rem); /* fluid: fits 320px */
+  --text-display--line-height: 1.1;
+
+  /* Spacing aliases */
+  --spacing-gutter: 1rem;
+  --spacing-section: 4rem;
+  --spacing-target-min: 1.5rem; /* 24px minimum target (WCAG 2.5.8) */
+  --spacing-target: 2.75rem; /* 44px primary touch target */
+
+  /* Radius */
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-sheet: 1.25rem;
+
+  /* Elevation */
+  --shadow-card: 0 1px 2px rgb(11 31 58 / 0.06), 0 4px 12px rgb(11 31 58 / 0.06);
+  --shadow-popover: 0 2px 6px rgb(11 31 58 / 0.08), 0 8px 24px rgb(11 31 58 / 0.12);
+  --shadow-sheet: 0 -8px 24px rgb(11 31 58 / 0.12);
+}
+
+/* Visible keyboard focus. Opt-in (not a global :focus-visible rule) so the legacy dark UI does not change. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-focus);
+    outline-offset: var(--focus-ring-offset);
+  }
+}
+
+/* WL-A11Y-8. Unlayered, so it wins over Tailwind's utilities. animate-spin stays: it is loading feedback. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-bounce {
+    animation: none;
+  }
+
+  /* The ping halo is decorative; frozen it would be a solid 75% disc, so hide it. */
+  .animate-ping {
+    display: none;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
