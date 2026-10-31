@@ -1,9 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import AuthProvider from "@/providers/AuthProvider";
-import QueryProvider from "@/providers/QueryProvider";
 
+// ADR-0017: the root layout mounts no providers and reads no cookies/headers,
+// so the marketing group can stay static. Providers live in the (app) and
+// admin layouts.
+//
 // Data collection runs as a separate process — see `npm run sync:worker`
 // and deploy/systemd/full-charge-sync.service — independent of the web app.
 
@@ -17,9 +19,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Both values are read when the page is built (static routes), so changing
+// either needs a rebuild.
+const APP_ORIGIN = process.env.APP_ORIGIN || "http://localhost:3000";
+// WL-SEO-8: the soft-launch switch. Set SITE_NOINDEX=1 to keep every page out of search.
+const siteNoIndex = ["1", "true"].includes(process.env.SITE_NOINDEX ?? "");
+
 export const metadata: Metadata = {
-  title: "Full Charge | Unified EV Charger Discovery Platform for India",
-  description: "Find real-time EV charger availability, compare pricing, and locate chargers across all major charging networks in India (Tata Power, Ather Grid, Statiq, etc.)",
+  metadataBase: new URL(APP_ORIGIN),
+  title: "FullCharge | Find EV charging stations in India",
+  description:
+    "Find EV charging stations in India, with connector types and prices where they are available.",
+  ...(siteNoIndex && { robots: { index: false, follow: false } }),
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -29,14 +45,12 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="en-IN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 dark" suppressHydrationWarning>
-        <AuthProvider>
-          <QueryProvider>{children}</QueryProvider>
-        </AuthProvider>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {children}
       </body>
     </html>
   );
