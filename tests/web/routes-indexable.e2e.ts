@@ -8,8 +8,8 @@ import { fetchDoc } from "./routes-support";
 // routes.e2e.ts covers the unset (fail-closed) build. Not covered: other values such as "1", "false" or "" (each needs a build).
 // Run: npx tsx --test --test-concurrency=1 "tests/web/**/*.e2e.ts"
 
-// Contract with tests/web/helpers/server.ts: the value reaches `next build` only because testEnv() copies it from
-// process.env. If testEnv() becomes an allowlist it must pass SITE_NOINDEX through, or the first test below fails.
+// Contract with tests/web/helpers/server.ts: the value reaches `next build` only because the testEnv() allowlist passes
+// SITE_NOINDEX through from process.env (harness.e2e.ts covers that). If it stopped, the first test below would fail.
 process.env.SITE_NOINDEX = "0";
 
 const T = { timeout: 60_000 };

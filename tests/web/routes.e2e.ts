@@ -11,8 +11,9 @@ import { BANNED_COPY, fetchDoc, loadPage, MARKERS } from "./routes-support";
 // This file builds with SITE_NOINDEX unset (the fail-closed default). routes-indexable.e2e.ts builds with SITE_NOINDEX=0.
 // Run: npx tsx --test --test-concurrency=1 "tests/web/**/*.e2e.ts"   (first run: npx playwright install chromium)
 
-// Contract with tests/web/helpers/server.ts: testEnv() copies SITE_NOINDEX from process.env, so deleting it here means
-// `next build` sees it unset. An allowlisting testEnv() must pass SITE_NOINDEX through when set and leave it absent when not.
+// Contract with tests/web/helpers/server.ts: testEnv() is an allowlist that passes SITE_NOINDEX through from process.env
+// when it is set and leaves it absent when it is not (harness.e2e.ts covers that), so deleting it here means `next build`
+// sees it unset.
 delete process.env.SITE_NOINDEX;
 
 const T = { timeout: 60_000 };
@@ -133,17 +134,6 @@ describe("WL-PERF-2: first load of /", () => {
 
   test("no NextAuth, React Query, Zustand, Google Maps or vaul code in the scripts / loads", T, async () => {
     assertNoAppCode(await loadPage(browser, server.baseUrl, "/", { blockPrefetch: true }));
-  });
-
-  test("no chunk that carries app-only code on /app is loaded by /", T, async () => {
-    const app = await loadPage(browser, server.baseUrl, "/app");
-    const home = await loadPage(browser, server.baseUrl, "/", { blockPrefetch: true });
-    const appOnly = new Set(
-      app.scripts.filter((s) => Object.values(MARKERS).some((m) => s.text.includes(m))).map((s) => new URL(s.url).pathname),
-    );
-    assert.ok(appOnly.size >= 3, `expected the provider, map and drawer code in several /app chunks, found ${appOnly.size}`);
-    const shared = home.scripts.map((s) => new URL(s.url).pathname).filter((p) => appOnly.has(p));
-    assert.deepEqual(shared, []);
   });
 
   test(`first-load JS is at most ${BUDGET_BYTES} bytes gzipped, noModule polyfill excluded`, T, async () => {

@@ -10,7 +10,7 @@ import { launchBrowser, openPage, VIEWPORTS, type ViewportName } from "./helpers
 import { assertNoEnvFiles, startServer, testEnv, type TestServer } from "./helpers/server";
 
 // Proves the harness itself (server lifecycle, viewports, capture), not any app feature.
-// Run: npx tsx --test "tests/web/**/*.e2e.ts"   (first run needs: npx playwright install chromium)
+// Run: npx tsx --test --test-concurrency=1 "tests/web/**/*.e2e.ts"   (first run needs: npx playwright install chromium)
 
 const T = { timeout: 30_000 };
 let server: TestServer;
@@ -175,7 +175,7 @@ describe("server isolation", () => {
         `import(${JSON.stringify(serverUrl)}).then((m) => m.startServer()).then(() => console.log("STARTED"), (e) => console.log("ERR:" + e.message));`,
       );
       const tsx = path.join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
-      const r = spawnSync(process.execPath, [tsx, "probe.ts"], { cwd: dir, encoding: "utf8", env: { ...process.env, E2E_SKIP_BUILD: "1" } });
+      const r = spawnSync(process.execPath, [tsx, "probe.ts"], { cwd: dir, encoding: "utf8" });
       assert.match(r.stdout, /ERR:Refusing to start the e2e server: \.env found/, r.stdout + r.stderr);
     });
   });
@@ -184,9 +184,12 @@ describe("server isolation", () => {
 describe("server lifecycle", () => {
   test("stop() is idempotent and frees the port", { timeout: 90_000 }, async () => {
     const second = await startServer(); // reuses this process's build
-    assert.equal((await fetch(second.baseUrl)).status, 200);
-    await second.stop();
-    await second.stop();
+    try {
+      assert.equal((await fetch(second.baseUrl)).status, 200);
+    } finally {
+      await second.stop(); // always runs, or a failed assertion leaves a server running and hangs the process
+    }
+    await second.stop(); // idempotent
     await assert.rejects(fetch(second.baseUrl, { signal: AbortSignal.timeout(3_000) }), "port must refuse connections");
   });
 });

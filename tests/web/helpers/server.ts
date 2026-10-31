@@ -104,7 +104,6 @@ let built: Promise<void> | undefined; // once per test process; one process per 
 
 function build(env: NodeJS.ProcessEnv) {
   built ??= (async () => {
-    if (process.env.E2E_SKIP_BUILD) return; // CI builds in its own step
     const b = run(["build"], env);
     const timer = setTimeout(() => kill(b.child), BUILD_TIMEOUT_MS);
     const code = await b.done;
@@ -122,7 +121,7 @@ export interface TestServer {
   logs(): string;
 }
 
-/** Build once (unless E2E_SKIP_BUILD is set), then `next start` on a free loopback port. */
+/** Build once per test process, then `next start` on a free loopback port. */
 export async function startServer(): Promise<TestServer> {
   assertNoEnvFiles();
   const port = await freePort();
