@@ -67,3 +67,23 @@ Add to the `fullcharge` user's crontab (`sudo -u fullcharge crontab -e`):
 At 15-minute snapshots and ~20k stations / ~50k connectors, expect roughly **1.1 GB/day / ~33
 GB/month** of snapshot rows. Put Postgres data on its own EBS volume sized for at least 6–12
 months of headroom, and set a CloudWatch disk-usage alarm at ~70%.
+
+## Dependency audit triage (WEB-S03, launch gate G12)
+
+Checked 2026-10-31 with `npm audit --omit=dev`. Production-tree findings went from 17 (2 critical,
+9 high, 6 moderate) to 5 (2 critical, 2 high, 1 moderate). What was fixed: `prisma`,
+`@prisma/client` and `@prisma/adapter-pg` moved to `^7.10.1` (same major, removes the `hono`,
+`@hono/node-server`, `valibot`, `deepmerge-ts` and `mysql2` findings), plus lockfile-only bumps of
+`nanoid`, `source-map-js` and `baseline-browser-mapping`. The deploy still runs a plain `npm ci`;
+`dotenv` and `tsx` (used by the sync worker) are unchanged.
+
+What is left, and why:
+
+| Package | Severity | Disposition |
+|---|---|---|
+| `next` 16.2.9 | critical | **Open. Blocks G12 and public HTTPS (T3-U6).** Fixed only in 16.4.1 or later (16.4.3 is latest), a minor jump across the 16.2 fork. Needs an `AGENTS.md` docs check and a user decision. Exposure today: no Server Actions, `next/og`, `use cache`, rewrites, i18n, custom server or `next/image` in `src/`, and production is Linux (the Windows RCE does not apply). The one default surface that stays on is `/_next/image`; `public/` holds only five first-party SVGs and `next.config.ts` has no `remotePatterns`. Interim mitigation: `images: { unoptimized: true }` in `next.config.ts` (owned by chain-proxy, not done here). Production is owner-IP-only until T3-U6 (WDEC-2). |
+| `sharp` (next's optional dep), `postcss` 8.4.31 (nested under `next`) | high | Resolved by the `next` bump: 16.4.3 pins `postcss` 8.5.23 and `sharp` `^0.35.5`. Interim risk accepted: `sharp` only handles first-party files through `/_next/image`, and the nested `postcss` only processes this repo's own CSS at build time. |
+| `next-auth`, `uuid` (its dependency) | critical, moderate | Resolved by T0-01, which removes `next-auth` and `@next-auth/prisma-adapter`. No work done here. |
+
+Re-run `npm audit --omit=dev` after the `next` bump and after T0-01; G12 passes at zero critical
+and zero high.
