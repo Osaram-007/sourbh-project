@@ -6,11 +6,12 @@
  *   npx tsx --test tests/backend/routeGuards.test.ts
  *
  * What stands in for what:
- *  - Database: `src/lib/db.ts` reuses globalThis.prisma when set, so a recording fake is installed
- *    there before any app module loads. Every property access on it is logged, so "refused before
- *    the database" is checked literally. This is a deliberate exception to ADR-0011's "don't mock
- *    Prisma": these cases check what a handler refuses and how it shapes a response, not queries,
- *    and the task requires tests that need no Postgres.
+ *  - Database: a recording fake (fakeDb.ts). `src/lib/db.ts` reuses globalThis.prisma when set, so
+ *    the fake is installed there before any app module loads. It logs every access and call with its
+ *    arguments, so "refused before the database" and "userId comes from the session" are checked
+ *    literally. I chose it for these refusal, response-shape and argument-scoping tests, as an
+ *    exception to ADR-0011's "don't mock Prisma". Scope: it says nothing about real queries or the
+ *    schema; those need a real Postgres and are covered where such tests exist.
  *  - Backstops: net.Socket.connect is counted (the sync lock and any pg connection use it) and
  *    global fetch throws, so a refused request cannot start a sync or reach the network without
  *    failing the test. Real scrapers never run.
@@ -28,6 +29,7 @@ import {
   uninstallRequestScope,
   type TestUser,
 } from "./authTestKit";
+import { calls, callsTo, failDb, fakeDb, resetDb, setDbResult, touched } from "./fakeDb";
 import { describe, it, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
@@ -39,58 +41,13 @@ delete process.env.REDIS_URL;
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-// ---------------------------------------------------------------------------------------------
-// Recording fake database, installed where src/lib/db.ts looks for an existing client
-// ---------------------------------------------------------------------------------------------
-const touched: string[] = [];
-let dbFailure = false;
-let results: Record<string, unknown> = {};
-const DEFAULT_RESULT: Record<string, unknown> = {
-  findMany: [],
-  groupBy: [],
-  count: 0,
-  findUnique: null,
-  findFirst: null,
-  create: { id: "new-id" },
-  upsert: { id: "cred-1" },
-  update: {},
-  delete: {},
-};
-
-const fakeDb: object = new Proxy(
-  {},
-  {
-    get(_t, model) {
-      if (typeof model === "symbol" || model === "then") return undefined;
-      touched.push(`db.${model}`);
-      return new Proxy(
-        {},
-        {
-          get(_m, method) {
-            if (typeof method === "symbol") return undefined;
-            return async () => {
-              touched.push(`${model}.${method}`);
-              if (dbFailure) throw new Error(CANARY);
-              const key = `${model}.${method}`;
-              return key in results ? results[key] : (DEFAULT_RESULT[method] ?? null);
-            };
-          },
-        },
-      );
-    },
-  },
-);
-(globalThis as unknown as { prisma: object }).prisma = fakeDb;
-
 const connects = { count: 0 };
 let fetchSpy: ReturnType<typeof mock.method>;
 
 function resetIo() {
-  touched.length = 0;
+  resetDb();
   connects.count = 0;
   fetchSpy.mock.resetCalls();
-  dbFailure = false;
-  results = {};
 }
 /** No database access, no connection attempt (a sync lock would be one), no network. */
 function assertNoIo() {
@@ -327,7 +284,7 @@ describe("unguarded reads in spec 7.3 stay public", () => {
     });
   }
   it("GET /api/stations returns 200 with the viewport rows for an anonymous caller", async () => {
-    results["station.findMany"] = [{ id: "s1", name: "Alpha" }];
+    setDbResult("station.findMany", [{ id: "s1", name: "Alpha" }]);
     const res = await routes.stations.GET(req(`/api/stations?${BBOX}`));
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), [{ id: "s1", name: "Alpha" }]);
@@ -356,7 +313,7 @@ describe("GET /api/admin/credentials never returns headers, cookies or a raw tok
   });
 
   it("returns masked rows only, even for an allowlisted admin", async () => {
-    results["cpoCredential.findMany"] = [row({}), row({ id: "c2", cpoName: "ather", authToken: null, cookies: null, headers: {} })];
+    setDbResult("cpoCredential.findMany", [row({}), row({ id: "c2", cpoName: "ather", authToken: null, cookies: null, headers: {} })]);
     await signInAs(ADMIN);
 
     const res = await routes["admin/credentials"].GET();
@@ -374,7 +331,7 @@ describe("GET /api/admin/credentials never returns headers, cookies or a raw tok
   });
 
   it("still tells the admin what they need: name, status, whether a token is set, error log", async () => {
-    results["cpoCredential.findMany"] = [row({}), row({ id: "c2", cpoName: "ather", authToken: null })];
+    setDbResult("cpoCredential.findMany", [row({}), row({ id: "c2", cpoName: "ather", authToken: null })]);
     await signInAs(ADMIN);
 
     const rows = (await (await routes["admin/credentials"].GET()).json()) as Array<Record<string, unknown>>;
@@ -386,14 +343,14 @@ describe("GET /api/admin/credentials never returns headers, cookies or a raw tok
   });
 
   it("an anonymous caller gets no rows at all", async () => {
-    results["cpoCredential.findMany"] = [row({})];
+    setDbResult("cpoCredential.findMany", [row({})]);
     const res = await routes["admin/credentials"].GET();
     assert.equal(res.status, 401);
     assert.ok(!(await res.text()).includes("RAW-TOKEN-1"));
   });
 
   it("POST does not echo the token, headers or cookies it was given", async () => {
-    results["cpoCredential.upsert"] = row({});
+    setDbResult("cpoCredential.upsert", row({}));
     await signInAs(ADMIN);
     const res = await routes["admin/credentials"].POST(
       postJson("/api/admin/credentials", {
@@ -425,7 +382,7 @@ describe("no handler response carries error.message (AH-6)", () => {
     for (const c of CASES.filter((x) => x.db)) {
       it(c.name, async () => {
         if (c.guard !== "public") await signInAs(ADMIN);
-        dbFailure = true;
+        failDb();
         await assertGeneric500(await c.call());
         assert.ok(touched.length > 0, "the case never reached the database, so it proved nothing");
       });
@@ -453,6 +410,65 @@ describe("no handler response carries error.message (AH-6)", () => {
   });
 });
 
+describe("user scoping: userId comes from the session, never from the request (W3)", () => {
+  const VICTIM = "victim-user-id-0000";
+  const OTHER: TestUser = { id: "u-other-9", role: "USER", email: "other@example.com" };
+  // A body that tries every way of naming a different user.
+  const hostile = (extra: object) => ({ userId: VICTIM, user: { id: VICTIM }, id: VICTIM, ...extra });
+  const noVictimAnywhere = () => assert.ok(!JSON.stringify(calls).includes(VICTIM), "the victim id reached the database");
+
+  for (const user of [DRIVER, OTHER, ADMIN]) {
+    describe(`signed in as ${user.id}`, () => {
+      it("GET /api/favorites lists the session user's favorites", async () => {
+        await signInAs(user);
+        await routes.favorites.GET();
+        const found = callsTo("favorite.findMany");
+        assert.equal(found.length, 1);
+        assert.equal((found[0][0] as { where: { userId: string } }).where.userId, user.id);
+      });
+
+      it("POST /api/favorites adds for the session user although the body names someone else", async () => {
+        await signInAs(user);
+        const res = await routes.favorites.POST(postJson("/api/favorites", hostile({ stationId: "s1" })));
+        assert.equal(res.status, 200);
+        const lookup = callsTo("favorite.findUnique");
+        assert.equal(lookup.length, 1);
+        assert.deepEqual((lookup[0][0] as { where: object }).where, { userId_stationId: { userId: user.id, stationId: "s1" } });
+        const created = callsTo("favorite.create");
+        assert.equal(created.length, 1);
+        assert.deepEqual((created[0][0] as { data: object }).data, { userId: user.id, stationId: "s1" });
+        noVictimAnywhere();
+      });
+
+      it("POST /api/favorites removes only through a lookup scoped to the session user", async () => {
+        await signInAs(user);
+        setDbResult("favorite.findUnique", { id: "fav-1" });
+        const res = await routes.favorites.POST(postJson("/api/favorites", hostile({ stationId: "s1" })));
+        assert.equal(res.status, 200);
+        assert.deepEqual(
+          (callsTo("favorite.findUnique")[0][0] as { where: object }).where,
+          { userId_stationId: { userId: user.id, stationId: "s1" } },
+        );
+        assert.deepEqual(callsTo("favorite.delete")[0][0], { where: { id: "fav-1" } });
+        noVictimAnywhere();
+      });
+
+      it("POST /api/reviews stores the review under the session user although the body names someone else", async () => {
+        await signInAs(user);
+        const res = await routes.reviews.POST(postJson("/api/reviews", hostile({ stationId: "s1", rating: 4, comment: "ok" })));
+        assert.equal(res.status, 200);
+        const created = callsTo("review.create");
+        assert.equal(created.length, 1);
+        const data = (created[0][0] as { data: { userId: string; stationId: string; rating: number } }).data;
+        assert.equal(data.userId, user.id);
+        assert.equal(data.stationId, "s1");
+        assert.equal(data.rating, 4);
+        noVictimAnywhere();
+      });
+    });
+  }
+});
+
 describe("table integrity (WL-RBAC-3, WL-RBAC-2)", () => {
   const apiDir = path.resolve(__dirname, "../../src/app/api");
   const routeFilesOnDisk = fs
@@ -461,11 +477,15 @@ describe("table integrity (WL-RBAC-3, WL-RBAC-2)", () => {
     .filter((p) => p === "route.ts" || p.endsWith("/route.ts"))
     .map((p) => p.replace(/\/?route\.ts$/, ""));
 
-  it("every route file under api/admin and api/analytics is in the table", () => {
-    const missing = routeFilesOnDisk
-      .filter((f) => f.startsWith("admin/") || f.startsWith("analytics/"))
-      .filter((f) => !(f in ROUTE_FILES));
-    assert.deepEqual(missing, [], "new admin/analytics route: add it to ROUTE_FILES and CASES, guarded");
+  it("every route file under src/app/api is in the table, wherever it lives", () => {
+    const missing = routeFilesOnDisk.filter((f) => !(f in ROUTE_FILES));
+    assert.deepEqual(missing, [], "new route: add it to ROUTE_FILES (and CASES unless it is a machine/NextAuth route)");
+  });
+
+  it("helper files next to routes are not routes: admin/syncView.ts must not trip the table", () => {
+    assert.ok(fs.existsSync(path.join(apiDir, "admin", "syncView.ts")), "helper moved: update this test");
+    assert.ok(!routeFilesOnDisk.some((f) => f.includes("syncView")));
+    assert.ok(!("admin/syncView" in ROUTE_FILES));
   });
 
   it("every route file in the table exists", () => {

@@ -11,7 +11,15 @@
  * Importing this file (do it FIRST) sets, before any app module loads:
  *  - DATABASE_URL to a closed local port, so nothing can reach a real database;
  *  - NEXTAUTH_SECRET and NEXTAUTH_URL, so the session cookie name and signing key are known.
- * T0-01 replaces the NextAuth session, so this is the one file to rewrite then.
+ *
+ * T0-01 replaces the NextAuth session, and that costs more than rewriting this file:
+ *  - The role-based cases invert under ADR-0014. Role stops being an input; a verified Google email
+ *    on ADMIN_EMAILS decides, so "ADMIN role without the email" and "USER role with the email"
+ *    change meaning, and authGuards.test.ts and routeGuards.test.ts need a re-think, not a patch.
+ *  - resolveSession() (ADR-0013) queries the database for the Session and User rows on every
+ *    signed-in request. assertNoIo() in routeGuards.test.ts will see that access, so its
+ *    "nothing touched the database" check only holds for anonymous requests; for signed-in paths,
+ *    the 403 ones included, it has to be narrowed to "no access beyond the session lookup".
  */
 import { mock } from "node:test";
 import { encode } from "next-auth/jwt";
