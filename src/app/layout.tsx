@@ -22,8 +22,9 @@ const geistMono = Geist_Mono({
 // Both values are read when the page is built (static routes), so changing
 // either needs a rebuild.
 const APP_ORIGIN = process.env.APP_ORIGIN || "http://localhost:3000";
-// WL-SEO-8: the soft-launch switch. Set SITE_NOINDEX=1 to keep every page out of search.
-const siteNoIndex = ["1", "true"].includes(process.env.SITE_NOINDEX ?? "");
+// WL-SEO-8: the soft-launch switch. Fails closed: only an explicit SITE_NOINDEX=0 makes
+// the site indexable; unset or any other value keeps every page out of search.
+const siteNoIndex = process.env.SITE_NOINDEX !== "0";
 
 export const metadata: Metadata = {
   metadataBase: new URL(APP_ORIGIN),
