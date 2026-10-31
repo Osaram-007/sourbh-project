@@ -35,9 +35,10 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json(results);
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Station search API error:", error);
     return NextResponse.json(
-      { error: "Search failed", message: error.message },
+      { error: "Search failed" },
       { status: 500 }
     );
   }

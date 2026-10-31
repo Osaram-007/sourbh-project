@@ -1,27 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 
 // GET: List user's favorite station IDs
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
 
     const favorites = await db.favorite.findMany({
-      where: { userId: session.user.id },
+      where: { userId: auth.user.id },
       select: { stationId: true },
     });
 
     return NextResponse.json({
       favoriteIds: favorites.map((f) => f.stationId),
     });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Favorites API error fetching favorites:", error);
     return NextResponse.json(
-      { error: "Failed to fetch favorites", message: error.message },
+      { error: "Failed to fetch favorites" },
       { status: 500 }
     );
   }
@@ -30,10 +28,8 @@ export async function GET() {
 // POST: Toggle favorite for a station
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
 
     const body = await req.json();
     const { stationId } = body;
@@ -49,7 +45,7 @@ export async function POST(req: NextRequest) {
     const existing = await db.favorite.findUnique({
       where: {
         userId_stationId: {
-          userId: session.user.id,
+          userId: auth.user.id,
           stationId,
         },
       },
@@ -63,15 +59,16 @@ export async function POST(req: NextRequest) {
       // Add favorite
       await db.favorite.create({
         data: {
-          userId: session.user.id,
+          userId: auth.user.id,
           stationId,
         },
       });
       return NextResponse.json({ action: "added", stationId });
     }
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Favorites API error toggling favorite:", error);
     return NextResponse.json(
-      { error: "Failed to toggle favorite", message: error.message },
+      { error: "Failed to toggle favorite" },
       { status: 500 }
     );
   }

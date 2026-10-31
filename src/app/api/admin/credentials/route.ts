@@ -1,22 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { CredentialStatus } from "@prisma/client";
 
-// Guard middleware to ensure only Admin users can invoke these API endpoints
-async function verifyAdmin() {
-  const session = await getServerSession(authOptions);
-  if (!session || session.user?.role !== "ADMIN") {
-    throw new Error("Unauthorized");
-  }
-  return session;
-}
-
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    await verifyAdmin();
-    
+    const auth = await requireAdmin();
+    if (!auth.ok) return auth.response;
+
     // Fetch CPO credentials and include recent error logs
     const credentials = await db.cpoCredential.findMany({
       include: {
@@ -28,7 +19,7 @@ export async function GET(req: NextRequest) {
       orderBy: { cpoName: "asc" }
     });
 
-    // Mask sensitive auth tokens before sending to client
+    // Masked view only: never send tokens, headers or cookies back to the client
     const sanitized = credentials.map(c => ({
       id: c.id,
       cpoName: c.cpoName,
@@ -36,16 +27,11 @@ export async function GET(req: NextRequest) {
       updatedAt: c.updatedAt,
       expiresAt: c.expiresAt,
       hasToken: !!c.authToken,
-      headers: c.headers,
-      cookies: c.cookies,
       errorLogs: c.errorLogs
     }));
 
     return NextResponse.json(sanitized);
-  } catch (error: any) {
-    if (error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Access denied. Admin role required." }, { status: 403 });
-    }
+  } catch (error) {
     console.error("Admin API error fetching credentials:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -53,8 +39,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await verifyAdmin();
-    
+    const auth = await requireAdmin();
+    if (!auth.ok) return auth.response;
+
     const body = await req.json();
     const { cpoName, authToken, refreshToken, headers, cookies, expiresAt } = body;
 
@@ -84,15 +71,12 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       message: `Credentials for ${cpoName} configured successfully.`,
-      id: cpoCred.id 
+      id: cpoCred.id
     });
-  } catch (error: any) {
-    if (error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Access denied. Admin role required." }, { status: 403 });
-    }
+  } catch (error) {
     console.error("Admin API error configuring credentials:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
