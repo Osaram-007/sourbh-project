@@ -27,7 +27,7 @@ export interface StatusEntry {
 export const STATUS: Record<AvailabilityState, StatusEntry> = {
   AVAILABLE: {
     label: "Available",
-    description: "The network reports free connectors.",
+    description: "The network shows this charger as available.",
     token: "--color-status-available",
     color: "var(--color-status-available)",
     icon: "CircleCheck",
