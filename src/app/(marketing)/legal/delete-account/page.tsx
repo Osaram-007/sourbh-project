@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Fact, linkClass } from "@/components/site/Fact";
 import { legal } from "@/content/legal";
-import { Fact, LegalDocument, linkClass } from "../_components/LegalDocument";
+import { LegalDocument } from "../_components/LegalDocument";
 
 const doc = legal.documents["delete-account"];
 

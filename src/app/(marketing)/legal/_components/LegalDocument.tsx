@@ -1,3 +1,4 @@
+import { Fact, markerClass } from "@/components/site/Fact";
 import { legal, type LegalDate, type LegalDocument as Doc } from "@/content/legal";
 
 // Shared layout for the /legal/* pages (T3-09). Server component, no client JS.
@@ -13,24 +14,6 @@ function formatDate(iso: LegalDate): string {
     throw new Error(`src/content/legal.ts: "${iso}" is not a valid date (use YYYY-MM-DD)`);
   }
   return dateFormat.format(date);
-}
-
-const markerClass =
-  "rounded-control border border-dashed border-border-strong bg-surface-muted px-1.5 py-0.5 text-body-sm text-ink-muted";
-
-export const linkClass = "rounded-control font-semibold underline underline-offset-4 focus-ring";
-
-/** A founder-supplied value, or the "To be confirmed" marker when it is not set. */
-export function Fact({ value, email }: { value: string | null; email?: boolean }) {
-  if (value === null || value.trim() === "") return <span className={markerClass}>To be confirmed</span>;
-  if (email) {
-    return (
-      <a href={`mailto:${value}`} className={linkClass}>
-        {value}
-      </a>
-    );
-  }
-  return <>{value}</>;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
