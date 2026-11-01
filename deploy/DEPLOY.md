@@ -87,3 +87,11 @@ What is left, and why:
 
 Re-run `npm audit --omit=dev` after the `next` bump and after T0-01; G12 passes at zero critical
 and zero high.
+
+## Dependency audit triage, part 2 (WEB-S09, launch gate G12)
+
+Checked 2026-11-02. `next` and `eslint-config-next` moved from 16.2.9 to 16.4.3 (exact pins) and
+`next-auth` from 4.24.14 to `^4.24.15`. `npm audit --omit=dev` went from 5 findings (2 critical,
+2 high, 1 moderate) to **0**, so G12 passes. This supersedes the `next`, `sharp`, `postcss`,
+`next-auth` and `uuid` rows in the WEB-S03 table above. `next-auth` is still removed later by T0-01.
+`npm ci` still works from the lockfile and the deploy command is unchanged.
