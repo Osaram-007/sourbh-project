@@ -3,7 +3,7 @@
  * IST is a fixed +05:30 offset with no daylight saving, so dates are computed by hand: the output is
  * identical on the server, in every browser and across Node versions, and always says "IST".
  *
- * Nothing here invents a time. A missing, invalid or future-dated timestamp gives null, which the caller
+ * Nothing here invents a time. A missing, invalid, zone-less or future-dated timestamp gives null, which the caller
  * shows as "Update time unknown" (spec-mobile 5.0).
  */
 
@@ -16,9 +16,18 @@ const IST_OFFSET_MS = 330 * 60_000;
 const FUTURE_TOLERANCE_MIN = 5;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** A valid Date, or null for null, undefined, "" and anything that does not parse. */
+// A string must carry its zone: Z, +HH:MM / -HH:MM or the compact +HHMM / -HHMM.
+// new Date("2026-10-31T15:42:00") is local time per ECMA-262, and a date-only "2026-10-31" is not a plausible
+// freshness timestamp, so both are rejected rather than guessed at (T-1: no silently wrong time).
+const ZONED = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+/**
+ * A valid Date, or null for null, undefined, "", anything that does not parse, and any string without an
+ * explicit zone designator. A Date and epoch ms are already unambiguous.
+ */
 export function toDate(at: Timestamp): Date | null {
   if (at === null || at === undefined || at === "") return null;
+  if (typeof at === "string" && !ZONED.test(at.trim())) return null;
   const date = at instanceof Date ? at : new Date(at);
   return Number.isNaN(date.getTime()) ? null : date;
 }

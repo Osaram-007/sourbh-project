@@ -8,8 +8,8 @@
 // (Optional extra TZ check of the whole file: TZ=America/Los_Angeles npx tsx --test tests/web/data.test.tsx)
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -289,6 +289,26 @@ describe("toDate: only a real instant gets through", () => {
     const ms = Date.parse(iso);
     for (const ok of [new Date(iso), iso, ms]) assert.equal(toDate(ok)?.getTime(), ms);
   });
+
+  // new Date("2026-10-31T15:42:00") is local time per ECMA-262: on the UTC production VM that same string would
+  // mean an instant 5 h 30 m away from what an IST source meant, i.e. stale data shown as fresh (T-1).
+  it("a string without a zone designator gives null instead of a host-zone guess", () => {
+    for (const naive of ["2026-10-31T15:42:00", "2026-10-31T15:42:00.123", "2026-10-31T15:42", "2026-10-31", "2026-10-31 15:42:00", "31 Oct 2026 15:42"]) {
+      assert.equal(toDate(naive), null, naive);
+    }
+  });
+
+  it("every accepted zone form gives the same instant", () => {
+    const ms = Date.parse("2026-10-31T10:12:00.000Z");
+    for (const ok of ["2026-10-31T10:12:00Z", "2026-10-31T10:12:00z", "2026-10-31T10:12:00.000Z", "2026-10-31T15:42:00+05:30", "2026-10-31T15:42:00+0530", "2026-10-31T02:12:00-08:00", "2026-10-31T02:12:00-0800", "2026-10-31T10:12:00+00:00"]) {
+      assert.equal(toDate(ok)?.getTime(), ms, ok);
+    }
+  });
+
+  it("a Date object is unambiguous and still gets through", () => {
+    const d = new Date("2026-10-31T10:12:00.000Z");
+    assert.equal(toDate(d), d);
+  });
 });
 
 describe("FreshnessText", () => {
@@ -364,7 +384,8 @@ describe("time output is identical whatever the machine's TZ", () => {
   interface Row {
     at: string;
     now: string;
-    ist: string;
+    /** null = the string carries no zone, so toDate rejects it and FreshnessText says "Update time unknown". */
+    ist: string | null;
     fresh: string | null;
   }
   const N = "2026-11-01T12:00:00Z";
@@ -383,12 +404,24 @@ describe("time output is identical whatever the machine's TZ", () => {
     { at: "2026-10-31T15:42:00+05:30", now: N, ist: "31 Oct, 3:42 pm IST", fresh: "Updated 31 Oct, 3:42 pm IST" },
     { at: "2026-10-31T15:42:00+00:00", now: N, ist: "31 Oct, 9:12 pm IST", fresh: "Updated 20 hours ago" },
     { at: "2027-03-01T00:00:00Z", now: N, ist: "1 Mar 2027, 5:30 am IST", fresh: null }, // future
+    { at: "2026-10-31T15:42:00+0530", now: N, ist: "31 Oct, 3:42 pm IST", fresh: "Updated 31 Oct, 3:42 pm IST" }, // compact offset
+    { at: "2026-11-01T11:55:00-0800", now: N, ist: "2 Nov, 1:25 am IST", fresh: null }, // compact negative offset: future
+    // Zone-less strings: rejected in every zone, so they can never become a host-zone guess (T-1).
+    { at: "2026-11-01T11:55:00", now: N, ist: null, fresh: null }, // would be "Updated 5 min ago" if read as UTC
+    { at: "2026-10-31T15:42:00", now: N, ist: null, fresh: null }, // the IST-date path
+    { at: "2026-10-31", now: N, ist: null, fresh: null }, // date-only
   ];
   const BANNER = "You are offline. Showing data from 1 Jan 2020, 5:30 am IST.";
   const render1 = (r: Row) => render(<FreshnessText at={r.at} now={new Date(r.now)} />);
 
   it("in this process (whatever its TZ is) the literal expectations hold", () => {
+    assert.ok(ROWS.some((r) => r.ist === null), "no zone-less row: the parsing path would go unproven");
     for (const r of ROWS) {
+      if (r.ist === null) {
+        assert.equal(toDate(r.at), null, r.at);
+        assert.equal(text(render1(r)), UPDATE_UNKNOWN, r.at);
+        continue;
+      }
       assert.equal(formatIst(new Date(r.at), new Date(r.now)), r.ist, r.at);
       assert.equal(freshnessLabel(new Date(r.at), new Date(r.now)), r.fresh, r.at);
     }
@@ -398,7 +431,7 @@ describe("time output is identical whatever the machine's TZ", () => {
   const CHILD = `
     import { pathToFileURL } from "node:url";
     const load = (f) => import(pathToFileURL(process.env.DATA_DIR + "/" + f).href);
-    const { formatIst, freshnessLabel } = await load("time.ts");
+    const { formatIst, freshnessLabel, toDate } = await load("time.ts");
     const { FreshnessText } = await load("FreshnessText.tsx");
     const { OfflineBanner } = await load("OfflineBanner.tsx");
     const { createElement: h } = await import("react");
@@ -406,8 +439,8 @@ describe("time output is identical whatever the machine's TZ", () => {
     const rows = JSON.parse(process.env.ROWS);
     console.log("RESULT " + JSON.stringify({
       offsets: [new Date(2026, 0, 1).getTimezoneOffset(), new Date(2026, 6, 1).getTimezoneOffset()],
-      ist: rows.map((r) => formatIst(new Date(r.at), new Date(r.now))),
-      fresh: rows.map((r) => freshnessLabel(new Date(r.at), new Date(r.now))),
+      ist: rows.map((r) => (r.ist === null ? toDate(r.at) : formatIst(new Date(r.at), new Date(r.now)))),
+      fresh: rows.map((r) => (r.ist === null ? toDate(r.at) : freshnessLabel(new Date(r.at), new Date(r.now)))),
       markup: rows.map((r) => render(h(FreshnessText, { at: r.at, now: new Date(r.now) }))),
       banner: render(h(OfflineBanner, { lastUpdated: "2020-01-01T00:00:00Z", onRetry() {}, offline: true })),
     }));
@@ -952,13 +985,41 @@ describe("src/components/data source rules", () => {
     }
   });
 
-  it("server-compatible files import no lucide-react, neither client file, neither Dialog nor Toast, and attach no event handlers", () => {
+  it("server-compatible files import no lucide-react, no client file, and attach no event handlers", () => {
     for (const [f, code] of serverFiles) {
       assert.ok(!/lucide-react/.test(code), `${f} imports lucide-react (its Icon is client code, 548 bytes on /)`);
       assert.ok(!/from\s+["'](?:\.\/|@\/components\/data\/)(?:ErrorRetry|OfflineBanner)["']/.test(code), `${f} imports a client component`);
-      assert.ok(!/from\s+["'](?:\.\.\/ui|@\/components\/ui)\/(?:Dialog|Toast)["']/.test(code), `${f} imports a client UI component`);
       assert.ok(!/\bon[A-Z]\w+=\{/.test(code), `${f} attaches an event handler, which needs "use client"`);
     }
+  });
+
+  // Naming the client components (Dialog, Toast) was an allow-list by omission: any other ../ui/* import passed, and
+  // `/` has ~799 bytes of headroom against its 150,000-byte budget. So walk the real import graph instead.
+  it('no module reachable from a server-compatible file by relative import contains "use client"', () => {
+    const EXTS = ["", ".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx"];
+    const resolveImport = (from: string, spec: string) => {
+      const base = resolve(dirname(from), spec);
+      const hit = EXTS.map((e) => base + e).find((p) => existsSync(p) && statSync(p).isFile());
+      assert.ok(hit, `${from}: cannot resolve import "${spec}" (the check must not pass by failing to look)`);
+      return hit;
+    };
+    const queue = serverFiles.map(([f]) => join(DATA_DIR, f));
+    const seen = new Set<string>(queue);
+    for (let i = 0; i < queue.length; i++) {
+      const file = queue[i];
+      const code = stripComments(readFileSync(file, "utf8"));
+      for (const m of code.matchAll(/(?:from|import)\s*["'](\.[^"']+)["']/g)) {
+        const target = resolveImport(file, m[1]);
+        if (seen.has(target)) continue;
+        seen.add(target);
+        const targetCode = stripComments(readFileSync(target, "utf8"));
+        assert.ok(!isClient(targetCode), `${file} reaches ${target} ("use client"), which would put client JS on /`);
+        queue.push(target);
+      }
+    }
+    // Anti-vacuity: the walk must really have left the data directory and resolved the known graph.
+    assert.ok(seen.size >= serverFiles.length + 1, `resolved only ${seen.size} modules: the walk found nothing to check`);
+    assert.ok([...seen].some((p) => p.replace(/\\/g, "/").endsWith("src/lib/status.ts")), "the walk never reached src/lib/status.ts");
   });
 
   it("the two client files import no icon library either (inline SVG keeps the bundle small)", () => {
