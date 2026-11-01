@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { legal } from "@/content/legal";
-import { Fact, LegalDocument } from "../_components/LegalDocument";
+import { Fact, LegalDocument, linkClass } from "../_components/LegalDocument";
 
 const doc = legal.documents["delete-account"];
 
@@ -12,23 +12,25 @@ export const metadata: Metadata = { title: doc.title, description: doc.descripti
 export default function Page() {
   return (
     <LegalDocument doc={doc}>
-      <section aria-labelledby="in-app" className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3">
         <h2 id="in-app" className="text-title font-semibold">
           Delete your account in FullCharge
         </h2>
         <p>
           Log in, then open your{" "}
-          <Link
-            href="/account"
-            prefetch={false}
-            className="rounded-control font-semibold underline underline-offset-4 focus-ring"
-          >
+          <Link href="/account" prefetch={false} className={linkClass}>
             account page
           </Link>{" "}
           and use the option to delete your account.
         </p>
+        {/* Wording follows copy-deck section 12 (same-method notice, DN-13): signing in the other way opens a different account. */}
+        <p>
+          Log in with the same method you used to create the account. A phone number and a Google account make
+          separate FullCharge accounts. If you log in with the other method, you open a different account, and
+          deleting it does not delete the first one.
+        </p>
       </section>
-      <section aria-labelledby="help" className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3">
         <h2 id="help" className="text-title font-semibold">
           Need help?
         </h2>

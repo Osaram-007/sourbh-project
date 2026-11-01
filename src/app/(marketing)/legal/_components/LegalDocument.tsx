@@ -8,14 +8,17 @@ const dateFormat = new Intl.DateTimeFormat("en-IN", { dateStyle: "long", timeZon
 
 function formatDate(iso: LegalDate): string {
   const date = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) throw new Error(`src/content/legal.ts: "${iso}" is not a valid date (use YYYY-MM-DD)`);
+  // The round trip rejects dates that would roll over ("2026-02-31" becomes 3 March).
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== iso) {
+    throw new Error(`src/content/legal.ts: "${iso}" is not a valid date (use YYYY-MM-DD)`);
+  }
   return dateFormat.format(date);
 }
 
 const markerClass =
   "rounded-control border border-dashed border-border-strong bg-surface-muted px-1.5 py-0.5 text-body-sm text-ink-muted";
 
-const linkClass = "rounded-control font-semibold underline underline-offset-4 focus-ring";
+export const linkClass = "rounded-control font-semibold underline underline-offset-4 focus-ring";
 
 /** A founder-supplied value, or the "To be confirmed" marker when it is not set. */
 export function Fact({ value, email }: { value: string | null; email?: boolean }) {
@@ -34,7 +37,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:gap-4">
       <dt className="font-semibold sm:w-48 sm:shrink-0">{label}</dt>
-      <dd className="whitespace-pre-line">{children}</dd>
+      <dd className="min-w-0 whitespace-pre-line">{children}</dd>
     </div>
   );
 }
@@ -43,7 +46,7 @@ export function LegalDocument({ doc, children }: { doc: Doc; children?: React.Re
   const { entity, contact, grievanceOfficer: officer } = legal;
   return (
     <div className="flex-1 bg-surface text-ink">
-      <article className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-gutter py-section">
+      <article className="mx-auto flex w-full max-w-3xl flex-col gap-10 break-words px-gutter py-section">
         <header className="flex flex-col gap-3">
           <h1 className="text-heading font-bold tracking-tight">{doc.title}</h1>
           <p className="text-lead text-ink-muted">{doc.description}</p>
@@ -65,7 +68,7 @@ export function LegalDocument({ doc, children }: { doc: Doc; children?: React.Re
         {children}
 
         {doc.sections.map((section) => (
-          <section key={section.id} aria-labelledby={section.id} className="flex flex-col gap-3">
+          <section key={section.id} className="flex flex-col gap-3">
             <h2 id={section.id} className="text-title font-semibold">
               {section.heading}
             </h2>
@@ -86,7 +89,7 @@ export function LegalDocument({ doc, children }: { doc: Doc; children?: React.Re
           </section>
         ))}
 
-        <section aria-labelledby="operator" className="flex flex-col gap-3 border-t border-border pt-8">
+        <section className="flex flex-col gap-3 border-t border-border pt-8">
           <h2 id="operator" className="text-title font-semibold">
             Who runs FullCharge
           </h2>
@@ -103,7 +106,7 @@ export function LegalDocument({ doc, children }: { doc: Doc; children?: React.Re
           </dl>
         </section>
 
-        <section aria-labelledby="grievance-officer" className="flex flex-col gap-3">
+        <section className="flex flex-col gap-3">
           <h2 id="grievance-officer" className="text-title font-semibold">
             Grievance officer
           </h2>

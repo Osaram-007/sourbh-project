@@ -6,11 +6,12 @@
 // supplies it (Q-C9 entity, address, contacts, grievance officer, versions, dates; Q-C10 retention).
 // Section `body` is null until counsel supplies the text. Never put a guess in place of a null.
 // A page shows "To be confirmed" for a null value and a draft placeholder for a null body.
+// The section headings are a skeleton for counsel to keep, rename or replace.
 //
 // Production gate (WL-LEGAL-2): with APP_ENV=production, importing this module throws when any value
-// is null, blank, or a section is still marked `draft`. `next build` imports it while prerendering
-// /legal/*, so the production build fails with the list below. With APP_ENV unset (dev, staging, CI)
-// nothing is checked.
+// is null, blank or placeholder text ("[FOUNDER: ...]", "To be confirmed", TBC/TBD), or a section is
+// still marked `draft`. `next build` imports it while prerendering /legal/*, so the production build
+// fails with the list of what is missing. With APP_ENV unset (dev, staging, CI) nothing is checked.
 
 export type LegalSlug = "privacy" | "terms" | "disclaimer" | "attributions" | "delete-account";
 
@@ -69,7 +70,6 @@ export const legal: LegalConfig = {
       path: "/legal/privacy",
       version: null,
       effectiveDate: null,
-      // Headings are a skeleton for counsel to keep, rename or replace.
       sections: [
         { id: "information-we-collect", heading: "Information we collect", body: null },
         { id: "how-we-use-information", heading: "How we use information", body: null },
@@ -147,15 +147,19 @@ export const legal: LegalConfig = {
   },
 };
 
-const isBlank = (value: unknown) => value === null || (typeof value === "string" && value.trim() === "");
+// The copy deck's own tags are likely to be pasted in, so placeholder text counts as missing too.
+const PLACEHOLDER = /\[(FOUNDER|VERIFY)\b|to be confirmed|\bTB[CD]\b/i;
+const isBlank = (value: unknown) =>
+  value == null || (typeof value === "string" && (value.trim() === "" || PLACEHOLDER.test(value)));
 
-/** Where a value is missing: dotted paths of null, blank or empty values, plus sections still marked draft. */
+/** Where a value is missing: dotted paths of null, blank, placeholder or empty values, and sections still marked draft. */
 export function pendingLegalItems(config: LegalConfig): string[] {
   const out: string[] = [];
   const walk = (value: unknown, path: string) => {
     // An empty array, or one whose entries are all blank, is as missing as null (a heading with no text).
     if (isBlank(value) || (Array.isArray(value) && value.every(isBlank))) out.push(`${path}: not set`);
     else if (typeof value === "object" && value !== null) {
+      if ((value as { draft?: unknown }).draft === true) out.push(`${path}: still marked draft`);
       for (const [key, child] of Object.entries(value)) {
         const id = (child as { id?: unknown } | null)?.id; // name sections by id, not array index
         walk(child, `${path}.${typeof id === "string" ? id : key}`);
@@ -163,11 +167,6 @@ export function pendingLegalItems(config: LegalConfig): string[] {
     }
   };
   walk(config, "legal");
-  for (const [slug, doc] of Object.entries(config.documents)) {
-    for (const section of doc.sections) {
-      if (section.draft) out.push(`legal.documents.${slug}.sections.${section.id}: still marked draft`);
-    }
-  }
   return out;
 }
 
@@ -176,9 +175,9 @@ export function assertLegalReady(config: LegalConfig): void {
   const pending = pendingLegalItems(config);
   if (pending.length === 0) return;
   throw new Error(
-    `Production build blocked: ${pending.length} legal value(s) in src/content/legal.ts are missing or still draft (APP_ENV=production).\n` +
+    `Production build blocked: ${pending.length} legal value(s) in src/content/legal.ts are missing, placeholder text or still draft (APP_ENV=production).\n` +
       pending.map((item) => `  - ${item}`).join("\n") +
-      "\nFill them in with the founder's facts (Q-C9, Q-C10) and counsel's texts, or build without APP_ENV=production.",
+      "\nFill them in with the founder's facts (Q-C9, Q-C10) and counsel's texts.",
   );
 }
 

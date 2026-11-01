@@ -67,3 +67,7 @@ Add to the `fullcharge` user's crontab (`sudo -u fullcharge crontab -e`):
 At 15-minute snapshots and ~20k stations / ~50k connectors, expect roughly **1.1 GB/day / ~33
 GB/month** of snapshot rows. Put Postgres data on its own EBS volume sized for at least 6–12
 months of headroom, and set a CloudWatch disk-usage alarm at ~70%.
+
+## T3-09: legal pages and `APP_ENV`
+
+Set `APP_ENV=production` only at go-live, in the CI build job and the VM `.env` together: with it set, `next build` fails while `src/content/legal.ts` has a null, blank, placeholder or draft value, and a failed `next build` on the VM damages the running site's `.next`, so CI must be the place that catches it first.
