@@ -14,11 +14,12 @@ export type ButtonSize = "md" | "sm";
 const BASE =
   "inline-flex items-center justify-center gap-2 rounded-control font-semibold focus-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0";
 
-// Classes appear literally so Tailwind generates them. hover: only applies on hover-capable pointers.
+// Classes appear literally so Tailwind generates them. hover: only applies on hover-capable pointers, so active:
+// is the feedback a tap gets on touch.
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-brand text-on-brand hover:bg-brand-hover",
-  secondary: "border border-border-strong bg-surface text-ink hover:bg-mint",
-  quiet: "text-ink hover:bg-ink/5",
+  primary: "bg-brand text-on-brand hover:bg-brand-hover active:bg-brand-hover",
+  secondary: "border border-border-strong bg-surface text-ink hover:bg-mint active:bg-ink/10",
+  quiet: "text-ink hover:bg-ink/5 active:bg-ink/10",
 };
 const SIZE: Record<ButtonSize, string> = {
   md: "min-h-target px-5 text-body",

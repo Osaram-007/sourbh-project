@@ -12,7 +12,8 @@ import { IconButton } from "./IconButton";
  *   toast("Could not copy the link", { kind: "error" });
  *
  * Info and success disappear after 6 s (override with `duration` in ms, 0 = stay until dismissed); errors stay until
- * dismissed. The timer pauses while the pointer or keyboard focus is on the toast. At most 3 show at once.
+ * dismissed. The timer is paused while the pointer is over the toast or focus is inside it (tracked separately, so it
+ * only runs when neither holds). At most 3 show at once.
  * Announced politely through an always-present live region. Client component: keep it out of marketing pages.
  * Known limit: a toast fired while a modal <Dialog> is open is behind it and not announced.
  */
@@ -57,21 +58,23 @@ const ICON = { info: Info, success: CircleCheck, error: CircleAlert } as const;
 const ICON_COLOR: Record<Kind, string> = { info: "text-ink", success: "text-brand", error: "text-status-unavailable" };
 
 function ToastItem({ id, message, kind, duration }: Item) {
-  const [paused, setPaused] = useState(false);
+  // Two flags, not one: leaving with the pointer must not restart the timer while focus is still inside, and vice versa.
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   useEffect(() => {
-    if (!duration || paused) return;
+    if (!duration || hovered || focused) return;
     const timer = setTimeout(() => dismissToast(id), duration);
     return () => clearTimeout(timer);
-  }, [id, duration, paused]);
+  }, [id, duration, hovered, focused]);
 
   const Icon = ICON[kind];
   return (
     <div
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       className="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-card border border-border bg-surface p-3 pl-4 text-ink shadow-popover"
     >
       <Icon aria-hidden="true" className={`mt-1.5 size-5 shrink-0 ${ICON_COLOR[kind]}`} />

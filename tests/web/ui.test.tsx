@@ -151,9 +151,16 @@ for (const f of FIELDS) {
       assert.equal(control.attrs["aria-invalid"], "true");
       assert.deepEqual(describedBy(control), ["email-error"]);
       assertNoDanglingRefs(html, control);
-      const text = textOf(html, only(html, "p", (t) => t.attrs.id === "email-error"));
+      const errorEl = only(html, "p", (t) => t.attrs.id === "email-error");
+      const text = textOf(html, errorEl);
       assert.ok(text.includes(ERROR), `error text missing from "${text}"`);
       assert.ok(text.includes("Error:"), "the word Error must be in the text, so it is not colour alone");
+      assert.equal(errorEl.attrs.role, "alert", "an error that appears later must be announced");
+    });
+
+    it("the hint is not a live region (only the error is announced)", () => {
+      const html = render(f.make({ hint: HINT, error: ERROR }));
+      assert.ok(!("role" in only(html, "p", (t) => t.attrs.id === "email-hint").attrs));
     });
 
     it("every icon in the field (error icon, Select chevron) is decorative (aria-hidden)", () => {
@@ -340,6 +347,13 @@ describe("Button", () => {
     assert.ok(c.includes("disabled:opacity-50") && c.includes("disabled:pointer-events-none"));
   });
 
+  it("every variant has a pressed (active:) state: hover never applies on touch, so a tap needs its own feedback", () => {
+    for (const variant of ["primary", "secondary", "quiet"] as const) {
+      const c = classes(only(render(<Button variant={variant}>x</Button>), "button"));
+      assert.ok(c.some((t) => t.startsWith("active:bg-")), `${variant}: ${c.join(" ")}`);
+    }
+  });
+
   it("never renders 'undefined' for default props", () => {
     assert.ok(!render(<Button>x</Button>).includes("undefined"));
   });
@@ -510,6 +524,28 @@ describe("Dialog (static markup)", () => {
     assert.equal(close.attrs["aria-label"], "Close");
     assert.equal(close.attrs.type, "button");
     assert.ok(html.indexOf("Body content") < html.indexOf('aria-label="Close"'));
+  });
+
+  it("Close is a 44px touch target: on touch it is the only way out", () => {
+    const close = only(html, "button");
+    assert.equal(targetPx(close.attrs.class), 44);
+  });
+
+  it("dismissible={false} renders no Close button, and the dialog is still named by its heading", () => {
+    const locked = render(
+      <Dialog open onClose={() => {}} title="Accept the terms" dismissible={false}>
+        <p>Body content</p>
+      </Dialog>,
+    );
+    assert.equal(startTags(locked).filter((t) => t.name === "button").length, 0, locked);
+    assert.ok(!locked.includes('aria-label="Close"'));
+    assert.equal(only(locked, "h2").attrs.id, only(locked, "dialog").attrs["aria-labelledby"]);
+    assert.ok(locked.includes("Body content"));
+    assert.ok(!("open" in only(locked, "dialog").attrs));
+  });
+
+  it("dismissible defaults to true (Close is rendered)", () => {
+    assert.equal(startTags(html).filter((t) => t.name === "button").length, 1);
   });
 });
 

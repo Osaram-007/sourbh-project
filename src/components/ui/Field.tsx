@@ -33,10 +33,11 @@ export function FieldHint({ id, children, className = "" }: { id: string; childr
 /**
  * Text is ink, not red: red is only 4.45:1 on mint. The error is carried by the icon, the word "Error" and the text,
  * and the control border turns red (3:1 non-text), so it is never colour alone.
+ * role="alert": an error that appears after a submit or blur is announced when it is inserted, not only on refocus.
  */
 export function FieldError({ id, children, className = "" }: { id: string; children: ReactNode; className?: string }) {
   return (
-    <p id={`${id}-error`} className={`flex items-start gap-1.5 text-body-sm font-medium text-ink ${className}`}>
+    <p id={`${id}-error`} role="alert" className={`flex items-start gap-1.5 text-body-sm font-medium text-ink ${className}`}>
       <svg
         viewBox="0 0 24 24"
         fill="none"
