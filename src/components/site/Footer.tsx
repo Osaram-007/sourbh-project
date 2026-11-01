@@ -61,7 +61,7 @@ export function SiteFooter() {
             </div>
           </dl>
           {/* No year: legal.ts holds none, and a year computed at build time goes stale until the next deploy. */}
-          <p>&copy; {entity.name?.trim() || "FullCharge"}</p>
+          <p className="break-words">&copy; {entity.name?.trim() || "FullCharge"}</p>
         </div>
       </div>
     </footer>
