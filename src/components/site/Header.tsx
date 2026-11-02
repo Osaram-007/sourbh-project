@@ -19,7 +19,7 @@ const SCRIPT =
   '(function(d){' +
   '/(^|; )fc_hint=1(;|$)/.test(d.cookie)&&d.documentElement.setAttribute("data-fc-hint","");' +
   'function o(){var m=d.getElementById("site-menu");return m&&m.open?m:null}' +
-  'd.addEventListener("keydown",function(e){var m=o();if(m&&e.key==="Escape"){m.open=false;m.firstElementChild.focus()}});' +
+  'd.addEventListener("keydown",function(e){var m=o();if(m&&e.key==="Escape"){m.open=false;m.querySelector("summary")?.focus()}});' +
   'd.addEventListener("click",function(e){var m=o();if(m&&!m.contains(e.target))m.open=false});' +
   'addEventListener("pageshow",function(){var m=o();if(m)m.open=false})' +
   '})(document)';

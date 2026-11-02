@@ -253,7 +253,17 @@ describe("ADR-0017: the fc_hint cookie swaps Log in for Open the map (inline scr
     for (const rel of ["page", ...SLUGS.map((s) => `legal/${s}/page`)]) {
       const file = path.join(process.cwd(), ".next/server/app/(marketing)", `${rel}_client-reference-manifest.js`);
       assert.ok(fs.existsSync(file), `${file} is missing (control: the manifest should exist for a built page)`);
-      assert.doesNotMatch(fs.readFileSync(file, "utf8"), /components\/site|content\/legal/, rel);
+      // The manifest is a JS file that assigns one object literal; parsing throws (= fails) if that shape ever changes.
+      const src = fs.readFileSync(file, "utf8");
+      const manifest = JSON.parse(src.slice(src.indexOf("{", src.indexOf("__RSC_MANIFEST[")), src.lastIndexOf("}") + 1)) as {
+        clientModules: Record<string, unknown>;
+      };
+      const modules = Object.keys(manifest.clientModules);
+      assert.ok(modules.length > 0, `${rel}: no client modules at all (control: Next always registers its own)`);
+      // Next registers its own client internals (layout-router, Link, ...), so "empty" here means "nothing but those".
+      // Any client component of ours or of a third party fails this, whatever its path - the old two-path scan did not.
+      const ours = modules.filter((m) => !m.includes("node_modules/next/dist/"));
+      assert.deepEqual(ours, [], `${rel} ships client components`);
     }
   });
 });
@@ -584,14 +594,18 @@ describe("skip link, focus and landmarks (WL-A11Y-4, WL-A11Y-10, WL-SEO-4)", () 
     });
   }
 
-  test("no page errors and no CSP violations while using the header (the inline script is allowed by the static marketing CSP)", T, async () => {
+  // No CSP is served anywhere yet: next.config.ts has no headers() and there is no src/proxy.ts (chain-proxy, WEB-S05/WEB-S06).
+  // So this cannot show the inline script is CSP-clean, and the title does not claim it. The cspViolations line below is a
+  // tripwire for the day a policy is served, not evidence today; the real per-page CSP check belongs to WEB-S05 (csp.e2e.ts),
+  // which must cover / and /legal/:path* under the static marketing CSP of ADR-0016.
+  test("no page errors while using the header", T, async () => {
     const { page, flush, captured, close } = await visit("mobile", "/", { hint: "1" });
     try {
       await page.locator("header summary").click();
       await page.keyboard.press("Escape");
       await flush();
       assert.deepEqual(captured.pageErrors, []);
-      assert.deepEqual(captured.cspViolations, []);
+      assert.deepEqual(captured.cspViolations, []); // vacuous until a CSP is served (see above)
     } finally {
       await close();
     }
