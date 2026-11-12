@@ -116,3 +116,12 @@ the same reasoning WEB-S03 accepted for the nested copy. `postcss.config.mjs` lo
 processes the CSS during `npm run build` on the deploy VM, and a lockfile-only `npm audit fix` on
 `postcss` alone cannot move it. The fix is moving `@tailwindcss/postcss` (installed 4.3.1, declared
 `^4`, latest 4.3.3, so in-range), which is owed to whoever next owns chain-pkg (T1-02).
+
+## WEB-B04: SEO env (APP_ORIGIN, SITE_NOINDEX)
+
+- `APP_ORIGIN` and `SITE_NOINDEX` are both read at **build time** (`src/lib/indexing.ts`). Changing either needs a rebuild.
+- Indexing is open only when `SITE_NOINDEX=0` **and** `APP_ORIGIN` is set. Otherwise robots.txt is `Disallow: /`, the sitemap is empty and every page is `noindex`.
+- `APP_ORIGIN=https://<domain>` must be in the VM `/opt/full-charge/.env` before any production build, because `deploy.sh` builds on the VM. Without it, every page `og:image` and `twitter:image` points at `http://localhost:3000`.
+- Staging leaves `SITE_NOINDEX` unset.
+- The CI build prints a `metadataBase` warning. That is expected, because the CI build is never deployed.
+- Before the index flip (WEB-U04), view the source of `/` and check that `og:image` is on `https://<domain>`.

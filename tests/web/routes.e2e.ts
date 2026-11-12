@@ -82,8 +82,8 @@ describe("WL-SEO-5 / WL-A11Y-11: / metadata", () => {
   test("lang is en-IN, with the new title and description", T, async () => {
     const { meta } = await fetchDoc(server.baseUrl, "/");
     assert.equal(meta.lang, "en-IN");
-    assert.equal(meta.title, "FullCharge | Find EV charging stations in India");
-    assert.deepEqual(meta.description, ["Find EV charging stations in India, with connector types and prices where they are available."]);
+    assert.equal(meta.title, "FullCharge: Find EV chargers in India"); // copy deck section 13
+    assert.deepEqual(meta.description, ["Search EV chargers in India by city, address or charger name. See connector types, price where listed, and availability where networks share it."]);
   });
 
   test("no banned claim in the title, description or any other meta tag", T, async () => {
@@ -404,5 +404,138 @@ describe("WEB-B02: landing page behaviour (WL-LAND-4, -6, -7, -9, WL-SEO-3, WL-P
     ];
     assert.deepEqual(order, [...order].sort((a, b) => a - b), "sections are out of spec 8.6 order");
     assert.equal(new Set(order).size, order.length);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// WEB-B04: SEO and metadata plumbing. Closed build (SITE_NOINDEX unset, no APP_ORIGIN: the harness allowlist has none).
+// The open state (SITE_NOINDEX=0 with an origin) is covered by tests/web/seo.test.ts in child processes.
+const linkTags = (html: string) =>
+  [...html.matchAll(/<link\s[^>]*>/g)].map((m) => Object.fromEntries([...m[0].matchAll(/([\w:-]+)="([^"]*)"/g)].map((a) => [a[1].toLowerCase(), a[2]])));
+
+/** Width and height from a PNG's IHDR chunk (big-endian u32 at bytes 16 and 20). */
+const pngSize = (b: Buffer) => {
+  assert.equal(b.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", "not a PNG");
+  return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+};
+
+describe("WL-SEO-2 / WL-SEO-8: robots.txt and sitemap.xml when indexing is closed", () => {
+  test("robots.txt disallows everything and names no sitemap", T, async () => {
+    const res = await fetch(`${server.baseUrl}/robots.txt`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.match(body, /^User-Agent: \*$/im);
+    assert.match(body, /^Disallow: \/\s*$/m);
+    assert.doesNotMatch(body, /^Allow:/im);
+    assert.doesNotMatch(body, /^Sitemap:/im);
+  });
+
+  test("sitemap.xml is an empty urlset", T, async () => {
+    const res = await fetch(`${server.baseUrl}/sitemap.xml`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.match(body, /<urlset[\s>]/);
+    assert.ok(!body.includes("<url>") && !body.includes("<loc>"), `urls listed while closed: ${body}`);
+  });
+
+  test("a marketing page carries a robots noindex while closed", T, async () => {
+    const { meta } = await fetchDoc(server.baseUrl, "/legal/privacy");
+    assert.ok(meta.robots.some((r) => /noindex/.test(r)), `robots: ${meta.robots}`);
+  });
+});
+
+describe("WL-SEO-1 / WL-SEO-5: / head tags", () => {
+  test("title, description, OG, Twitter, icons and manifest are in the served HTML", T, async () => {
+    const { html, meta } = await fetchDoc(server.baseUrl, "/");
+    assert.equal(meta.lang, "en-IN");
+    assert.ok(meta.title && meta.title.length > 0);
+    assert.ok(meta.description.length === 1 && meta.description[0].length > 0);
+    const get = (k: string) => meta.metas.filter((m) => m.key === k).map((m) => m.content);
+    assert.equal(get("og:site_name")[0], "FullCharge");
+    assert.equal(get("og:title")[0], "FullCharge: Find EV chargers in India");
+    assert.equal(get("og:description")[0], "Find an EV charger and see the details before you go.");
+    assert.match(get("og:image")[0] ?? "", /\/opengraph-image(\?|$)/);
+    assert.equal(get("og:image:width")[0], "1200");
+    assert.equal(get("og:image:height")[0], "630");
+    assert.equal(get("twitter:card")[0], "summary_large_image");
+    assert.match(get("twitter:image")[0] ?? "", /\/opengraph-image(\?|$)/);
+
+    const links = linkTags(html);
+    const hrefs = (rel: string) => links.filter((l) => (l.rel ?? "").split(/\s+/).includes(rel)).map((l) => l.href);
+    assert.ok(hrefs("icon").some((h) => /\/icon(\?|$)/.test(h)), "no <link rel=icon> to /icon");
+    assert.ok(hrefs("apple-touch-icon").some((h) => /\/apple-icon(\?|$)/.test(h)), "no apple-touch-icon link to /apple-icon");
+    assert.ok(hrefs("manifest").some((h) => /\/manifest\.webmanifest$/.test(h)), "no manifest link");
+    assert.ok(!links.some((l) => /favicon/.test(l.href ?? "")), "a favicon link is present");
+  });
+
+  test("no WL-LAND-5 banned word in the title, any meta tag, or any link tag", T, async () => {
+    const { meta, html } = await fetchDoc(server.baseUrl, "/");
+    const copy = [meta.title ?? "", ...meta.metas.map((m) => m.content), ...[...html.matchAll(/<link\s[^>]*>/g)].map((m) => m[0])];
+    assert.ok(copy.join("").length > 100);
+    for (const text of copy) for (const b of BANNED_COPY) assert.doesNotMatch(text, b);
+  });
+});
+
+describe("WL-SEO-1: generated icons, share image and manifest", () => {
+  for (const [p, w, h] of [["/icon", 32, 32], ["/apple-icon", 180, 180], ["/opengraph-image", 1200, 630]] as const) {
+    test(`${p} is a ${w}x${h} PNG`, T, async () => {
+      const res = await fetch(server.baseUrl + p);
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get("content-type") ?? "", /^image\/png/);
+      assert.deepEqual(pngSize(Buffer.from(await res.arrayBuffer())), { width: w, height: h });
+    });
+  }
+
+  test("/manifest.webmanifest has the brand fields and icons that exist", T, async () => {
+    const res = await fetch(`${server.baseUrl}/manifest.webmanifest`);
+    assert.equal(res.status, 200);
+    const m = JSON.parse(await res.text());
+    assert.equal(m.name, "FullCharge");
+    assert.equal(m.start_url, "/app");
+    assert.equal(m.theme_color, "#0f7d38");
+    assert.ok(m.icons.length > 0);
+    for (const icon of m.icons) assert.equal((await fetch(server.baseUrl + icon.src)).status, 200, `manifest icon ${icon.src}`);
+  });
+
+  test("/favicon.ico is gone (404)", T, async () => {
+    assert.equal((await fetch(`${server.baseUrl}/favicon.ico`)).status, 404);
+  });
+});
+
+describe("WL-SEO-6: branded 404", () => {
+  test("an unknown path is a real 404 with the branded page, noindex, and plain-anchor links", T, async () => {
+    const { status, html, meta } = await fetchDoc(server.baseUrl, "/no-such-page-b04");
+    assert.equal(status, 404);
+    assert.match(html, /<h1[^>]*>Page not found<\/h1>/);
+    assert.ok(meta.robots.some((r) => /noindex/.test(r)), `robots: ${meta.robots}`);
+    for (const href of ["/", "/app"]) assert.match(html, new RegExp(`<a href="${href}"`), `no plain <a href="${href}">`);
+  });
+});
+
+describe("WL-SEO-6 / S1: the 404 sits in the marketing chrome", () => {
+  test("branded h1 plus header logo link, footer, skip link and exactly one main", T, async () => {
+    const { status, html, meta } = await fetchDoc(server.baseUrl, "/no-such-page-b04");
+    assert.equal(status, 404);
+    assert.equal([...html.matchAll(/<h1[\s>]/g)].length, 1);
+    assert.match(html, /<h1[^>]*>Page not found<\/h1>/);
+    assert.match(/<header[\s\S]*?<\/header>/.exec(html)?.[0] ?? "", /<a[^>]*href="\/"/, "no logo link to / in the header");
+    assert.match(html, /<footer\b/);
+    assert.match(html, /<a[^>]*href="#main-content"/, "no skip link");
+    assert.equal([...html.matchAll(/<main[\s>]/g)].length, 1, "exactly one <main>");
+    assert.match(html, /<main[^>]*id="main-content"/);
+    assert.ok(meta.robots.some((r) => /noindex/.test(r)));
+  });
+});
+
+// S6: the OG image's alt is the opengraph-image export, repeated in og and twitter tags.
+describe("WL-SEO-1 / S6: OG image alt and type on /", () => {
+  test("og:image:alt and twitter:image:alt equal the opengraph-image alt export; og:image:type is image/png", T, async () => {
+    const { meta } = await fetchDoc(server.baseUrl, "/");
+    const get = (k: string) => meta.metas.filter((m) => m.key === k).map((m) => m.content);
+    const alt = /export const alt = "([^"]+)"/.exec(fs.readFileSync(path.join(process.cwd(), "src/app/opengraph-image.tsx"), "utf8"))![1];
+    assert.ok(alt.length > 0);
+    assert.deepEqual(get("og:image:alt"), [alt]);
+    assert.deepEqual(get("twitter:image:alt"), [alt]);
+    assert.deepEqual(get("og:image:type"), ["image/png"]);
   });
 });
