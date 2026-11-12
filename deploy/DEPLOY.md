@@ -71,3 +71,48 @@ months of headroom, and set a CloudWatch disk-usage alarm at ~70%.
 ## T3-09: legal pages and `APP_ENV`
 
 Set `APP_ENV=production` only at go-live, in the CI build job and the VM `.env` together: with it set, `next build` fails while `src/content/legal.ts` has a null, blank, placeholder or draft value, and a failed `next build` on the VM damages the running site's `.next`, so CI must be the place that catches it first.
+
+## Dependency audit triage (WEB-S03, launch gate G12)
+
+Checked 2026-10-31 with `npm audit --omit=dev`. Production-tree findings went from 17 (2 critical,
+9 high, 6 moderate) to 5 (2 critical, 2 high, 1 moderate). What was fixed: `prisma`,
+`@prisma/client` and `@prisma/adapter-pg` moved to `^7.10.1` (same major, removes the `hono`,
+`@hono/node-server`, `valibot`, `deepmerge-ts` and `mysql2` findings), plus lockfile-only bumps of
+`nanoid`, `source-map-js` and `baseline-browser-mapping`. The deploy still runs a plain `npm ci`;
+`dotenv` and `tsx` (used by the sync worker) are unchanged.
+
+What was left at WEB-S03 time, and why. **Every row below is superseded by WEB-S09 (part 2, further
+down): the production audit is now 0.** The original text is kept as provenance, with the stale
+verdicts struck through.
+
+| Package | Severity | Disposition |
+|---|---|---|
+| `next` 16.2.9 | critical | **RESOLVED 2026-11-02 (WEB-S09): `next` 16.4.3 landed and `npm audit --omit=dev` is now 0 vulnerabilities; see part 2 below.** ~~**Open. Blocks G12 and public HTTPS (T3-U6).**~~ (WEB-S03 verdict, no longer true.) Fixed only in 16.4.1 or later (16.4.3 is latest), a minor jump across the 16.2 fork. Needs an `AGENTS.md` docs check and a user decision. Exposure today: no Server Actions, `next/og`, `use cache`, rewrites, i18n, custom server or `next/image` in `src/`, and production is Linux (the Windows RCE does not apply). The one default surface that stays on is `/_next/image`; `public/` holds only five first-party SVGs and `next.config.ts` has no `remotePatterns`. ~~Interim mitigation: `images: { unoptimized: true }` in `next.config.ts` (owned by chain-proxy, not done here).~~ **No longer required as a security mitigation: the advisories are patched in 16.4.3. It was deliberately not applied in WEB-S09 because `next.config.ts` belongs to chain-proxy (WEB-S05 then WEB-S06), so whether to set it at all is decided there, not silently dropped here.** Production is owner-IP-only until T3-U6 (WDEC-2). |
+| `sharp` (next's optional dep), `postcss` 8.4.31 (nested under `next`) | high | **RESOLVED 2026-11-02 (WEB-S09): installed `sharp` 0.35.5 and nested `postcss` 8.5.23 (under `next` 16.4.3); see part 2 below.** Resolved by the `next` bump: 16.4.3 pins `postcss` 8.5.23 and `sharp` `^0.35.5`. ~~Interim risk accepted: `sharp` only handles first-party files through `/_next/image`, and the nested `postcss` only processes this repo's own CSS at build time.~~ (WEB-S03 interim acceptance, no longer needed.) |
+| `next-auth`, `uuid` (its dependency) | critical, moderate | **`uuid` finding RESOLVED 2026-11-02 (WEB-S09): `uuid` 8.3.2 -> 11.1.1 via `next-auth` 4.24.15, and the production audit is clean. `next-auth` itself is NOT removed yet: T0-01 still removes `next-auth` and `@next-auth/prisma-adapter` later, and that is not done.** ~~Resolved by T0-01, which removes `next-auth` and `@next-auth/prisma-adapter`. No work done here.~~ (WEB-S03 plan; the audit was cleared by the bump instead.) |
+
+~~Re-run `npm audit --omit=dev` after the `next` bump and after T0-01; G12 passes at zero critical
+and zero high.~~ Done after the `next` bump (part 2): the audit is 0, so G12 passes. Re-running it
+after T0-01 is still worthwhile.
+
+## Dependency audit triage, part 2 (WEB-S09, launch gate G12)
+
+Checked 2026-11-02. `next` and `eslint-config-next` moved from 16.2.9 to 16.4.3 (exact pins) and
+`next-auth` from 4.24.14 to `^4.24.15`. `npm audit --omit=dev` went from 5 findings (2 critical,
+2 high, 1 moderate) to **0**, so G12 passes. This supersedes the `next`, `sharp`, `postcss`,
+`next-auth` and `uuid` rows in the WEB-S03 table above. `next-auth` is still removed later by T0-01.
+`npm ci` still works from the lockfile and the deploy command is unchanged.
+
+Not fixed by this bump: the **top-level** `postcss` 8.5.15 is a separate copy from the nested 8.5.23
+under `next`. `npm audit` (full tree) rates it **high** and lists two advisories, one high and one
+moderate. The high one is GHSA-r28c-9q8g-f849, Path Traversal in Previous Source Map Auto-Loading
+(`sourceMappingURL`) leading to Arbitrary `.map` File Disclosure. The moderate one is
+GHSA-fxqj-rqcc-2cmp, an incomplete fix of GHSA-6g55-p6wh-862q, where an attacker-controlled
+`sourceMappingURL` reads arbitrary `.map` files when `from` is unset. The affected range is
+`<=8.5.22`, and npm reports `fixAvailable: true`. It is dev-only, so it does not gate G12 (which is
+`--omit=dev` by definition). Exploitability is low because all the CSS it processes is first-party,
+the same reasoning WEB-S03 accepted for the nested copy. `postcss.config.mjs` loads
+`@tailwindcss/postcss`, which pins `postcss` to exactly 8.5.15, so this copy is the one that
+processes the CSS during `npm run build` on the deploy VM, and a lockfile-only `npm audit fix` on
+`postcss` alone cannot move it. The fix is moving `@tailwindcss/postcss` (installed 4.3.1, declared
+`^4`, latest 4.3.3, so in-range), which is owed to whoever next owns chain-pkg (T1-02).
