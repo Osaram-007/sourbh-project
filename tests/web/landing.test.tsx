@@ -48,7 +48,7 @@ describe("WL-LAND-6: Use my location inline script (run in a vm with fakes; the 
   type Geo = { getCurrentPosition: (ok: Cb, err: Err) => void };
   type Mods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean };
   function run(geo: Geo | undefined, storage: { setItem: (k: string, v: string) => void }) {
-    const calls = { geo: 0, assigned: [] as string[], prevented: 0, click: (_m: Mods = {}) => {}, pageshow: () => {} };
+    const calls = { geo: 0, assigned: [] as string[], prevented: 0, click: (() => {}) as (m?: Mods) => void, pageshow: () => {} };
     // The link mirrors a real anchor: a attribute map behind get/set/removeAttribute.
     const attrs = new Map<string, string>();
     const link = {
