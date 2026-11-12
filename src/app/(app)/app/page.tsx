@@ -31,6 +31,7 @@ export default function Home() {
   const setMapZoom = useStore((state) => state.setMapZoom);
   const [geoLocating, setGeoLocating] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [now, setNow] = useState<number | null>(null);
 
   // Auto-geolocate on mount
   useEffect(() => {
@@ -52,9 +53,11 @@ export default function Home() {
     }
   }, [setUserLocation, setMapCenter]);
 
-  // Fetch last sync time for freshness indicator
+  // Fetch last sync time for freshness indicator, and the clock its label is measured against.
+  // Reading Date.now() during render is impure, so the clock is state, re-read on this same 60s tick.
   useEffect(() => {
     const fetchSyncStatus = async () => {
+      setNow(Date.now());
       try {
         const res = await fetch("/api/admin/sync");
         if (res.ok) {
@@ -95,8 +98,8 @@ export default function Home() {
 
   // Compute freshness
   const getSyncFreshness = () => {
-    if (!lastSyncTime) return null;
-    const diffMs = Date.now() - new Date(lastSyncTime).getTime();
+    if (!lastSyncTime || now === null) return null;
+    const diffMs = now - new Date(lastSyncTime).getTime();
     const diffMin = Math.floor(diffMs / 60000);
     if (diffMin < 1) return { text: "Just synced", fresh: true };
     if (diffMin < 60) return { text: `Synced ${diffMin}m ago`, fresh: diffMin < 30 };
@@ -116,7 +119,7 @@ export default function Home() {
           </div>
           <div>
             <h1 className="text-sm font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 bg-clip-text text-transparent leading-none">Full Charge</h1>
-            <p className="text-[9px] text-slate-450 mt-0.5 tracking-widest font-semibold uppercase">India's Unified EV Network</p>
+            <p className="text-[9px] text-slate-450 mt-0.5 tracking-widest font-semibold uppercase">India&apos;s Unified EV Network</p>
           </div>
         </div>
 
