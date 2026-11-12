@@ -53,23 +53,43 @@ export function listAssetFiles(root: string): string[] {
 export interface RegisterRow {
   location: string;
   origin: string;
+  owner: string;
   licence: string;
+  date: string;
 }
 
-/** Rows of the markdown table in asset-register.md: columns Task | Asset | Location | Origin | Licence | Notes. */
+/** Rows of the markdown table in asset-register.md, columns found by header name (Location, Origin, Owner, Licence, Date). */
 export function parseRegister(md: string): RegisterRow[] {
   const rows: RegisterRow[] = [];
+  let col: Record<string, number> | null = null;
   for (const line of md.split(/\r?\n/)) {
     if (!line.startsWith("|")) continue;
     const c = line.split("|").slice(1, -1).map((x) => x.trim());
-    if (c.length < 6 || c[0] === "Task" || /^-+$/.test(c[0])) continue;
-    rows.push({ location: c[2], origin: c[3], licence: c[4] });
+    if (c.includes("Location")) {
+      col = Object.fromEntries(c.map((h, i) => [h.toLowerCase(), i]));
+      continue;
+    }
+    if (!col || /^:?-+:?$/.test(c[0])) continue;
+    const get = (k: string) => (col![k] === undefined ? "" : (c[col![k]] ?? ""));
+    rows.push({ location: get("location"), origin: get("origin"), owner: get("owner"), licence: get("licence"), date: get("date") });
   }
   return rows;
 }
 
-/** A path is registered when some row's Location names it (as a whole path, not a prefix of another). */
-const names = (location: string, file: string) => new RegExp(`(^|[^\\w./-])${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\w/-])`).test(location);
+/** A path is registered when some row's Location names it as a whole path: not a prefix ("logo.svg.bak") or suffix of another. */
+const names = (location: string, file: string) =>
+  new RegExp(`(^|[^\\w./-])${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/-]|\\.\\w)`).test(location);
+
+const PLACEHOLDER = /^(-|tbd|\?|unknown|n\/a)$/i;
+
+/** Why a row is incomplete, or "" when it is fine. Origin, Owner, Licence and Date are all required. */
+export function rowProblem(r: RegisterRow): string {
+  for (const k of ["origin", "owner", "licence", "date"] as const) {
+    if (!r[k] || PLACEHOLDER.test(r[k])) return `empty or placeholder ${k}`;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date)) return `date "${r.date}" is not YYYY-MM-DD`;
+  return "";
+}
 
 /** Problems found: one string per file that has no complete row. Empty means every file is covered. */
 export function registerProblems(files: string[], rows: RegisterRow[]): string[] {
@@ -77,10 +97,11 @@ export function registerProblems(files: string[], rows: RegisterRow[]): string[]
   for (const f of files) {
     const hits = rows.filter((r) => names(r.location, f));
     if (!hits.length) out.push(`${f}: no row in docs/asset-register.md names it in the Location column`);
-    else if (!hits.some((r) => r.origin && r.licence)) out.push(`${f}: its row has an empty Origin or Licence`);
+    else if (!hits.some((r) => !rowProblem(r))) out.push(`${f}: its row is incomplete (${rowProblem(hits[0])})`);
   }
   return out;
 }
+
 
 const ENT: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
 export const decode = (s: string) =>
@@ -89,11 +110,28 @@ export const decode = (s: string) =>
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
     .replace(/&([a-z]+);/gi, (m, n) => ENT[n.toLowerCase()] ?? m);
 
-/** What a visitor can read: scripts, styles and comments dropped, tags removed, entities decoded. */
-export const visibleText = (html: string) =>
-  decode(html.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript)\b[\s\S]*?<\/\1>/gi, " ").replace(/<head\b[\s\S]*?<\/head>/i, " ").replace(/<[^>]+>/g, " "))
+/**
+ * What a visitor can read: scripts, styles and comments dropped, tags removed, entities decoded.
+ * React puts <!-- --> between adjacent text nodes, so comments become "" (not a space) or "100<!-- -->%" would read "100 %".
+ * `inline` also drops tags to "" so "<b>100</b>%" reads "100%"; scan both versions.
+ */
+export const visibleText = (html: string, inline = false) =>
+  decode(
+    html
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<(script|style|noscript)\b[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<head\b[\s\S]*?<\/head>/i, " ")
+      .replace(/<[^>]+>/g, inline ? "" : " "),
+  )
     .replace(/\s+/g, " ")
     .trim();
+
+/** Text values of alt, title, placeholder and aria-label attributes, plus application/ld+json bodies. */
+export function attributeAndJsonLdText(html: string): string[] {
+  const out = [...html.matchAll(/\s(?:alt|title|placeholder|aria-label)="([^"]*)"/gi)].map((m) => decode(m[1]));
+  for (const m of html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)) out.push(decode(m[1]));
+  return out.filter(Boolean);
+}
 
 /** Strip // and block comments so source scans only see what ships. Naive (a "//" inside a string is cut): fine for these files. */
 export const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");

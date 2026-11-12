@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { startServer, type TestServer } from "./helpers/server";
+import { discoverRoutes } from "./marketing-support";
 import { fetchDoc } from "./routes-support";
 
 // WEB-A02, second build: SITE_NOINDEX=0 is the go-live setting (WL-SEO-8). SITE_NOINDEX is read at build time, so the
@@ -91,4 +93,18 @@ describe("go-live build: the 404 (WL-SEO-6)", () => {
     assert.equal(status, 404);
     assert.ok(meta.robots.includes("noindex, nofollow"), `robots: ${meta.robots}`);
   });
+});
+
+// WEB-B05: the open build must not noindex any marketing or legal page; a tenth page is covered automatically (found on disk).
+describe("go-live build: every marketing and legal page is indexable (WL-SEO-2, WL-SEO-8)", () => {
+  const routes = discoverRoutes(path.join(process.cwd(), "src/app"));
+  test("control: discovery is not empty", () => assert.ok(routes.includes("/") && routes.includes("/legal/privacy") && routes.length >= 9, routes.join(", ")));
+  for (const r of routes) {
+    test(r, T, async () => {
+      const { status, meta, res } = await fetchDoc(server.baseUrl, r);
+      assert.equal(status, 200);
+      assert.deepEqual(meta.robots, [], `${r} has a robots meta`);
+      assert.doesNotMatch(res.headers.get("x-robots-tag") ?? "", /noindex/i);
+    });
+  }
 });
