@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { BANNED_COPY } from "./routes-support";
-import { attributeAndJsonLdText, decode, discoverRoutes, listAssetFiles, parseRegister, registerProblems, stripComments, visibleText } from "./marketing-support";
+import { attributeAndJsonLdText, decode, discoverRoutes, listAssetFiles, parseRegister, registerProblems, rowProblem, stripComments, visibleText } from "./marketing-support";
 
 const ROOT = process.cwd();
 const APP = path.join(ROOT, "src/app");
@@ -60,6 +60,12 @@ describe("asset-register matcher (synthetic)", () => {
       assert.match(registerProblems(["public/p.jpg"], reg(`| T | P | \`public/p.jpg\` | Stock | Me | ${v} | 2026-01-01 | n |`))[0], /licence/, v);
     }
   });
+  it("placeholder text that merely starts with TBD or 'To be confirmed' fails", () => {
+    for (const v of ["TBD (Q-C8)", "To be confirmed", "to be confirmed by legal", "Unknown owner", "N/A yet"]) {
+      assert.match(registerProblems(["public/p.jpg"], reg(`| T | P | \`public/p.jpg\` | Stock | Me | ${v} | 2026-01-01 | n |`))[0], /licence/, v);
+    }
+    assert.deepEqual(registerProblems(["public/p.jpg"], reg("| T | P | `public/p.jpg` | Stock | Me | Tbdfoo Ltd licence | 2026-01-01 | n |")), [], "word boundary: Tbdfoo is not TBD");
+  });
   it("a bad date fails", () => {
     for (const d of ["", "TBD", "13/11/2026", "2026-1-1", "2026-11-13T00:00"]) {
       assert.equal(registerProblems(["public/p.jpg"], reg(`| T | P | \`public/p.jpg\` | Stock | Me | MIT | ${d} | n |`)).length, 1, d);
@@ -85,8 +91,11 @@ describe("WL-LAND-11 / G11: every asset file in the repo has a complete register
 
   it("control: the register parses, and the real icon files are in the file list", () => {
     assert.ok(rows.length >= 3, "register has too few rows, so the parser may be broken");
-    assert.ok(rows.every((r) => r.owner !== undefined && r.date !== undefined && r.location));
+    assert.ok(rows.every((r) => r.location && r.origin && r.owner && r.licence && r.date), "a column is empty or was not found by header name");
     for (const f of ["src/app/icon.tsx", "src/app/apple-icon.tsx", "src/app/opengraph-image.tsx", "src/app/manifest.ts"]) assert.ok(files.includes(f), `${f} not listed`);
+  });
+  it("every row in the register is complete, whether or not an asset file points at it", () => {
+    for (const r of rows) assert.equal(rowProblem(r), "", r.location);
   });
   it("every file under public/, every icon/OG/manifest file under src/app, and every image under src/ is registered", () => {
     assert.deepEqual(registerProblems(files, rows), []);
@@ -118,7 +127,7 @@ describe("BANNED_COPY patterns", () => {
     for (const w of ["real-time", "Real time", "realtime", "reliable", "trip planner", "plan a trip", "highway", "guaranteed", "100%", "all major networks"]) assert.ok(banned(w).length, w);
   });
   it("catches other hyphens and spacing: en dash, non-breaking hyphen, soft hyphen, 100 %, 100 percent", () => {
-    for (const w of ["real–time", "real‑time", "real­time", "real—time", "100 %", "100 percent", "100 %"]) assert.ok(banned(w).length, JSON.stringify(w));
+    for (const w of ["real\u2013time", "real\u2011time", "real\u00adtime", "real\u2014time", "100 %", "100 percent", "100\u00a0%"]) assert.ok(banned(w).length, JSON.stringify(w));
   });
   it("does not match innocent words", () => {
     for (const w of ["a small majority of chargers", "overall majority", "1000 chargers", "100 km"]) assert.deepEqual(banned(w).map(String), [], w);
@@ -138,8 +147,10 @@ describe("text helpers", () => {
     const html = "<p><b>100</b>% of chargers</p>";
     assert.ok(banned(visibleText(html, true)).length);
     assert.ok(banned(visibleText("<p>Re<em>liable</em> data</p>", true)).length);
-    assert.equal(visibleText("<p>a</p><p>b</p>", true), "ab", "inline mode joins block text: that is why the spaced version is scanned too");
+    assert.equal(visibleText("<p>a</p><p>b</p>", true), "a b", "block tags still separate words in inline mode");
     assert.equal(visibleText("<p>a</p><p>b</p>"), "a b");
+    assert.deepEqual(banned(visibleText("<h2>Pick a charger, not a re</h2><p>liable guess</p>", true)).map(String), [], "block boundary is not a joined word");
+    assert.ok(banned(visibleText("<p><b>100</b>% of <a href=\"/x\">real</a>-time</p>", true)).length);
   });
   it("attributeAndJsonLdText returns alt, title, placeholder, aria-label values and JSON-LD bodies", () => {
     const html = '<img alt="A &amp; B"><input placeholder="Search city" aria-label="Find"><a title="T">x</a><script type="application/ld+json">{"description":"real-time"}</script><script>other</script>';

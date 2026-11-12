@@ -80,7 +80,7 @@ export function parseRegister(md: string): RegisterRow[] {
 const names = (location: string, file: string) =>
   new RegExp(`(^|[^\\w./-])${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/-]|\\.\\w)`).test(location);
 
-const PLACEHOLDER = /^(-|tbd|\?|unknown|n\/a)$/i;
+const PLACEHOLDER = /^(-|tbd\b|\?|unknown\b|n\/a\b|to be confirmed)/i;
 
 /** Why a row is incomplete, or "" when it is fine. Origin, Owner, Licence and Date are all required. */
 export function rowProblem(r: RegisterRow): string {
@@ -121,7 +121,9 @@ export const visibleText = (html: string, inline = false) =>
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<(script|style|noscript)\b[\s\S]*?<\/\1>/gi, " ")
       .replace(/<head\b[\s\S]*?<\/head>/i, " ")
-      .replace(/<[^>]+>/g, inline ? "" : " "),
+      // inline: drop only inline tags to "" (so <b>100</b>% joins) and block tags to a space (so </h2><p> does not join words)
+      .replace(inline ? /<\/?(?:a|b|strong|em|i|span|small|mark|abbr|code|sub|sup)\b[^>]*>/gi : /(?!)/g, "")
+      .replace(/<[^>]+>/g, " "),
   )
     .replace(/\s+/g, " ")
     .trim();

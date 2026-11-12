@@ -124,7 +124,7 @@ describe("WL-LAND-1: every marketing and legal route is prerendered (build outpu
       assert.equal(entry.initialRevalidateSeconds, false, `${r} revalidates, so it is not purely static`);
       assert.ok(!(r in manifest.dynamicRoutes));
       assert.ok(fs.existsSync(html(r)), `${html(r)} missing`);
-      assert.equal(entry.compute ?? "static", "static", `${r} is computed per request`);
+      assert.equal(entry.compute, "static", `${r} is computed per request`);
     });
   }
 
