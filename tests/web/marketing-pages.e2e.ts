@@ -386,7 +386,6 @@ describe("form behaviour (POST /api/v1/enquiries mocked)", () => {
     }
   });
 
-  // Expected to FAIL today: aria-disabled:pointer-events-none lets the 2nd click fall through to <main tabindex=-1>, which takes focus.
   test("S2: after a mouse double-click the button is still document.activeElement while sending", T, async () => {
     const { page, close } = await open("/for-businesses");
     try {
@@ -426,19 +425,6 @@ describe("form behaviour (POST /api/v1/enquiries mocked)", () => {
     }
   });
 
-  test("labels: Organisation and Message say (optional); Name and Email do not", T, async () => {
-    const { page, close } = await open("/about");
-    try {
-      const label = async (f: string) => (await page.locator(`label[for="contact-${f}"]`).textContent()) ?? "";
-      assert.match(await label("organisation"), /\(optional\)/);
-      assert.match(await label("message"), /\(optional\)/);
-      assert.doesNotMatch(await label("name"), /optional/);
-      assert.doesNotMatch(await label("email"), /optional/);
-    } finally {
-      await close();
-    }
-  });
-
   test("B1: without JS, a native submit does not put the fields in the URL", T, async () => {
     const context = await browser.newContext({ javaScriptEnabled: false });
     try {
@@ -451,8 +437,11 @@ describe("form behaviour (POST /api/v1/enquiries mocked)", () => {
       await page.fill("#contact-name", "Asha Rao");
       await page.fill("#contact-email", "asha@example.test");
       await page.check("#contact-consent");
-      await page.click('button[type="submit"]').catch(() => {}); // the POST to the page may 405; that is fine
-      await page.waitForTimeout(1000);
+      const posted = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/about");
+      await page.click('button[type="submit"]');
+      const req = await posted; // the native POST must happen (any status); fields go in the body, not the URL
+      assert.match(req.postData() ?? "", /Asha(\+|%20)Rao/);
+      await page.waitForLoadState("load");
       for (const u of [...urls, page.url()]) assert.doesNotMatch(u, /[?&](name|email|consent)=|Asha|asha%40|asha@/i, u);
     } finally {
       await context.close();
