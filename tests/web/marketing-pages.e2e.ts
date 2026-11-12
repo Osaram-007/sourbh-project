@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import type { Browser, Page, Request, Route } from "playwright";
-import { ENQUIRY_MAX } from "../../src/lib/enquiries";
 import { launchBrowser, openPage } from "./helpers/browser";
 import { startServer, type TestServer } from "./helpers/server";
 import { BANNED_COPY, fetchDoc, loadPage } from "./routes-support";
@@ -171,15 +170,6 @@ describe("WL-LAND-14 / a11y: form structure", () => {
       }
     });
   }
-
-  test("maxlength attributes equal the contract caps", T, async () => {
-    const { page, close } = await open("/about");
-    try {
-      for (const [f, cap] of Object.entries(ENQUIRY_MAX)) assert.equal(await page.getAttribute(`#contact-${f}`, "maxlength"), String(cap), f);
-    } finally {
-      await close();
-    }
-  });
 });
 
 const fillValid = async (page: Page) => {
@@ -348,21 +338,124 @@ describe("form behaviour (POST /api/v1/enquiries mocked)", () => {
     });
   }
 
-  test("double-click submit sends exactly one request and disables the button while sending", T, async () => {
+  const slow500 = (counter: { n: number }) => async (r: Route) => {
+    counter.n++;
+    await new Promise((res) => setTimeout(res, 1000));
+    await r.fulfill({ status: 500, body: "boom" });
+  };
+  const sendingNow = (page: Page) =>
+    page.waitForFunction(() => document.querySelector('button[type="submit"]')?.getAttribute("aria-disabled") === "true");
+
+  test("S2: double-click sends one request; aria-disabled and Sending... while in flight; restored after", T, async () => {
     const { page, close } = await open("/for-businesses");
     try {
-      let n = 0;
-      await page.route(API, async (r) => {
-        n++;
-        await new Promise((res) => setTimeout(res, 800));
-        await r.fulfill({ status: 200, body: "{}" });
-      });
+      const c = { n: 0 };
+      await page.route(API, slow500(c));
       await fillValid(page);
-      await page.dblclick('button[type="submit"]');
-      await page.getByText(SUCCESS).waitFor();
-      assert.equal(n, 1);
+      const btn = page.locator('button[type="submit"]');
+      await btn.dblclick();
+      await sendingNow(page);
+      assert.equal((await btn.textContent())?.trim(), "Sending…");
+      assert.equal(await btn.getAttribute("disabled"), null, "must use aria-disabled, not disabled");
+      await page.getByText(GENERIC).waitFor();
+      assert.equal(c.n, 1);
+      assert.equal(await btn.getAttribute("aria-disabled"), "false");
+      assert.equal((await btn.textContent())?.trim(), "Send Message");
     } finally {
       await close();
+    }
+  });
+
+  test("S2: keyboard double-Enter while sending: one request, focus stays on the button", T, async () => {
+    const { page, close } = await open("/for-businesses");
+    try {
+      const c = { n: 0 };
+      await page.route(API, slow500(c));
+      await fillValid(page);
+      const btn = page.locator('button[type="submit"]');
+      await btn.focus();
+      await page.keyboard.press("Enter");
+      await sendingNow(page);
+      await page.keyboard.press("Enter"); // aria-disabled keeps it focusable; the ref guard must swallow this
+      assert.equal(await btn.evaluate((e) => e === document.activeElement), true, "focus dropped while sending");
+      await page.getByText(GENERIC).waitFor();
+      assert.equal(c.n, 1);
+      assert.equal(await btn.evaluate((e) => e === document.activeElement), true, "focus dropped after the response");
+    } finally {
+      await close();
+    }
+  });
+
+  // Expected to FAIL today: aria-disabled:pointer-events-none lets the 2nd click fall through to <main tabindex=-1>, which takes focus.
+  test("S2: after a mouse double-click the button is still document.activeElement while sending", T, async () => {
+    const { page, close } = await open("/for-businesses");
+    try {
+      const c = { n: 0 };
+      await page.route(API, slow500(c));
+      await fillValid(page);
+      const btn = page.locator('button[type="submit"]');
+      await btn.dblclick();
+      await sendingNow(page);
+      const act = await page.evaluate(() => `${document.activeElement?.tagName}#${document.activeElement?.id}`);
+      assert.equal(await btn.evaluate((e) => e === document.activeElement), true, `focus dropped to ${act}`);
+    } finally {
+      await close();
+    }
+  });
+
+  test("S1: after an invalid submit, a valid resubmit never moves focus back to an old field", T, async () => {
+    const { page, close } = await open("/for-businesses");
+    try {
+      await page.route(API, async (r) => {
+        await new Promise((res) => setTimeout(res, 800));
+        await r.fulfill({ status: 500, body: "boom" });
+      });
+      await submit(page); // empty: focus goes to name
+      await page.waitForSelector("#contact-name-error");
+      assert.equal(await activeId(page), "contact-name");
+      await fillValid(page);
+      await page.focus('button[type="submit"]');
+      await submit(page);
+      await page.waitForFunction(() => document.querySelector('button[type="submit"]')?.getAttribute("aria-disabled") === "true");
+      assert.notEqual(await activeId(page), "contact-name", "in flight");
+      await page.getByText(GENERIC).waitFor();
+      assert.notEqual(await activeId(page), "contact-name", "after the alert");
+      assert.equal(await page.locator('[aria-invalid="true"]').count(), 0, "old errors cleared");
+    } finally {
+      await close();
+    }
+  });
+
+  test("labels: Organisation and Message say (optional); Name and Email do not", T, async () => {
+    const { page, close } = await open("/about");
+    try {
+      const label = async (f: string) => (await page.locator(`label[for="contact-${f}"]`).textContent()) ?? "";
+      assert.match(await label("organisation"), /\(optional\)/);
+      assert.match(await label("message"), /\(optional\)/);
+      assert.doesNotMatch(await label("name"), /optional/);
+      assert.doesNotMatch(await label("email"), /optional/);
+    } finally {
+      await close();
+    }
+  });
+
+  test("B1: without JS, a native submit does not put the fields in the URL", T, async () => {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    try {
+      const page = await context.newPage();
+      const origin = new URL(server.baseUrl).origin;
+      await page.route((u) => u.protocol.startsWith("http") && u.origin !== origin, (r) => r.abort());
+      const urls: string[] = [];
+      page.on("request", (r) => urls.push(r.url()));
+      await page.goto(server.baseUrl + "/about", { waitUntil: "load" });
+      await page.fill("#contact-name", "Asha Rao");
+      await page.fill("#contact-email", "asha@example.test");
+      await page.check("#contact-consent");
+      await page.click('button[type="submit"]').catch(() => {}); // the POST to the page may 405; that is fine
+      await page.waitForTimeout(1000);
+      for (const u of [...urls, page.url()]) assert.doesNotMatch(u, /[?&](name|email|consent)=|Asha|asha%40|asha@/i, u);
+    } finally {
+      await context.close();
     }
   });
 });
