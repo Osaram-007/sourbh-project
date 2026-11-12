@@ -262,7 +262,9 @@ describe("ADR-0017: the fc_hint cookie swaps Log in for Open the map (inline scr
       assert.ok(modules.length > 0, `${rel}: no client modules at all (control: Next always registers its own)`);
       // Next registers its own client internals (layout-router, Link, ...), so "empty" here means "nothing but those".
       // Any client component of ours or of a third party fails this, whatever its path - the old two-path scan did not.
-      const ours = modules.filter((m) => !m.includes("node_modules/next/dist/"));
+      // WEB-B04: error.tsx and global-error.tsx must be client components (Next requires it), so they register on every page.
+      // Allow exactly those two files; chrome, header or any other module of ours still fails.
+      const ours = modules.filter((m) => !m.includes("node_modules/next/dist/") && !/(^|\/)src\/app\/(global-)?error\.tsx($|[ #?])/.test(m));
       assert.deepEqual(ours, [], `${rel} ships client components`);
     }
   });
