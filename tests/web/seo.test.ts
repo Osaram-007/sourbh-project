@@ -15,12 +15,14 @@ const APP = join(ROOT, "src/app");
 function load(env: { SITE_NOINDEX?: string; APP_ORIGIN?: string }) {
   const childEnv: Record<string, string | undefined> = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, HOME: process.env.HOME, ...env };
   const imp = (f: string) => `(async()=>{const m=await import(${JSON.stringify(pathToFileURL(join(APP, f)).href)});return typeof m.default==="function"?m.default:m.default.default;})()`;
-  const code = `const r=await ${imp("robots.ts")};const s=await ${imp("sitemap.ts")};process.stdout.write(JSON.stringify({robots:r(),sitemap:s()}));`;
+  const ix = `await import(${JSON.stringify(pathToFileURL(join(ROOT, "src/lib/indexing.ts")).href)})`;
+  const code = `const r=await ${imp("robots.ts")};const s=await ${imp("sitemap.ts")};const i=${ix};process.stdout.write(JSON.stringify({robots:r(),sitemap:s(),indexingOpen:(i.indexingOpen??i.default?.indexingOpen)}));`;
   const r = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", code], { cwd: ROOT, env: childEnv as NodeJS.ProcessEnv, encoding: "utf8", timeout: 90_000 });
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout) as {
-    robots: { rules: { userAgent: string; allow?: string; disallow: string | string[] }; sitemap?: string };
+    robots: { rules: { userAgent: string; allow?: string | string[]; disallow: string | string[] }; sitemap?: string };
     sitemap: { url: string }[];
+    indexingOpen: boolean;
   };
 }
 
@@ -29,13 +31,28 @@ const PRIVATE = ["/app", "/admin", "/api", "/login", "/account"];
 const EXPECTED_PATHS = ["/", "/for-businesses", "/for-operators", "/about", "/legal/privacy", "/legal/terms", "/legal/disclaimer", "/legal/attributions", "/legal/delete-account"];
 
 describe("WL-SEO-2 / WL-SEO-8: open state (SITE_NOINDEX=0 and APP_ORIGIN set)", () => {
-  const { robots, sitemap } = load({ SITE_NOINDEX: "0", APP_ORIGIN: `${ORIGIN}/some/path?x=1` });
+  const { robots, sitemap, indexingOpen } = load({ SITE_NOINDEX: "0", APP_ORIGIN: `${ORIGIN}/some/path?x=1` });
 
-  it("robots allows / and disallows exactly the private areas", () => {
+  it("robots allows / and /apple-icon and disallows exactly the private areas", () => {
     assert.equal(robots.rules.userAgent, "*");
-    assert.equal(robots.rules.allow, "/");
+    assert.deepEqual(robots.rules.allow, ["/", "/apple-icon"]);
     assert.deepEqual(robots.rules.disallow, PRIVATE);
   });
+
+  // S4: robots matches by prefix, so "Disallow: /app" also covers /apple-icon; the longest matching rule wins (RFC 9309).
+  it("longest-match: /apple-icon is allowed while /app and /app/x are disallowed", () => {
+    const list = (v?: string | string[]) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
+    const rules = [...list(robots.rules.allow).map((p) => ({ p, ok: true })), ...list(robots.rules.disallow).map((p) => ({ p, ok: false }))];
+    const allowed = (path: string) => rules.filter((r) => path.startsWith(r.p)).sort((a, b) => b.p.length - a.p.length || +b.ok - +a.ok)[0]?.ok ?? true;
+    assert.equal(allowed("/apple-icon"), true);
+    assert.equal(allowed("/app"), false);
+    assert.equal(allowed("/app/x"), false);
+    assert.equal(allowed("/api/stations"), false);
+    assert.equal(allowed("/legal/privacy"), true);
+    assert.equal(allowed("/"), true);
+  });
+
+  it("indexingOpen is true", () => assert.equal(indexingOpen, true));
 
   it("robots names the sitemap at the origin only", () => {
     assert.equal(robots.sitemap, `${ORIGIN}/sitemap.xml`);
@@ -53,26 +70,28 @@ describe("WL-SEO-2 / WL-SEO-8: open state (SITE_NOINDEX=0 and APP_ORIGIN set)", 
   });
 
   // The B03 pages (/for-businesses, /for-operators, /about) merge from a parallel branch. Until then they may be missing.
-  // ponytail: after integration, empty PENDING_B03 so this becomes strict.
+  // N7: this list expires by itself. Once a listed page exists, the test below fails until it is removed from the set.
   const PENDING_B03 = new Set(["/for-businesses", "/for-operators", "/about"]);
-  it("every sitemap path is a page that exists in src/app", () => {
-    const groups = readdirSync(APP, { withFileTypes: true }).filter((e) => e.isDirectory() && /^\(.+\)$/.test(e.name)).map((e) => e.name);
+  const groups = readdirSync(APP, { withFileTypes: true }).filter((e) => e.isDirectory() && /^\(.+\)$/.test(e.name)).map((e) => e.name);
+  const hasPage = (p: string) => ["", ...groups].some((g) => ["page.tsx", "page.ts", "page.jsx", "page.js"].some((f) => existsSync(join(APP, g, p === "/" ? "" : p, f))));
+  it("every sitemap path is a page that exists in src/app (B03 paths excepted until they land)", () => {
     for (const { url } of sitemap) {
       const p = new URL(url).pathname;
-      if (PENDING_B03.has(p)) continue;
-      const rel = p === "/" ? "" : p;
-      const found = ["", ...groups].some((g) => ["page.tsx", "page.ts", "page.jsx", "page.js"].some((f) => existsSync(join(APP, g, rel, f))));
-      assert.ok(found, `sitemap lists ${p} but no page file exists for it`);
+      if (!PENDING_B03.has(p)) assert.ok(hasPage(p), `sitemap lists ${p} but no page file exists for it`);
     }
+  });
+  it("PENDING_B03 holds only paths that still have no page", () => {
+    for (const p of PENDING_B03) assert.ok(!hasPage(p), `${p} now has a page: empty PENDING_B03 (the existence check is now strict)`);
   });
 });
 
 describe("WL-SEO-8: states that must stay closed", () => {
   const closed = (env: { SITE_NOINDEX?: string; APP_ORIGIN?: string }) => {
-    const { robots, sitemap } = load(env);
+    const { robots, sitemap, indexingOpen } = load(env);
     assert.deepEqual(robots.rules, { userAgent: "*", disallow: "/" });
     assert.equal(robots.sitemap, undefined);
     assert.deepEqual(sitemap, []);
+    assert.equal(indexingOpen, false); // layout.tsx derives its robots noindex from this (checked below)
   };
   it("flag unset, origin set", () => closed({ APP_ORIGIN: ORIGIN }));
   it("flag '1', origin set", () => closed({ SITE_NOINDEX: "1", APP_ORIGIN: ORIGIN }));
@@ -80,12 +99,30 @@ describe("WL-SEO-8: states that must stay closed", () => {
   for (const v of ["", "false", "off"]) it(`flag '${v}' is not an opt-in (only '0' opens)`, () => closed({ SITE_NOINDEX: v, APP_ORIGIN: ORIGIN }));
 });
 
-describe("WL-SEO-2: indexing on but no origin", () => {
-  const { robots, sitemap } = load({ SITE_NOINDEX: "0" });
-  it("sitemap is empty (no relative URLs)", () => assert.deepEqual(sitemap, []));
-  it("robots still protects the private areas and has no Sitemap line", () => {
-    assert.deepEqual(robots.rules.disallow, PRIVATE);
-    assert.equal(robots.sitemap, undefined);
+// S3: flag 0 but no origin is closed in every signal (it was "open" before a77e610).
+describe("WL-SEO-8 / S3: SITE_NOINDEX=0 without APP_ORIGIN is closed", () => {
+  it("robots Disallow /, empty sitemap, indexingOpen false", () => {
+    for (const env of [{ SITE_NOINDEX: "0" }, { SITE_NOINDEX: "0", APP_ORIGIN: "" }]) {
+      const { robots, sitemap, indexingOpen } = load(env);
+      assert.deepEqual(robots.rules, { userAgent: "*", disallow: "/" });
+      assert.equal(robots.sitemap, undefined);
+      assert.deepEqual(sitemap, []);
+      assert.equal(indexingOpen, false);
+    }
+  });
+});
+
+// layout.tsx imports next/font/google, which cannot load outside Next, so the layout's own signal is checked in source here
+// and in the built HTML by routes.e2e.ts (closed build) and routes-indexable.e2e.ts (open build: no robots meta).
+describe("WL-SEO-8 / S3: layout.tsx takes its robots noindex from indexingOpen", () => {
+  const src = readFileSync(join(APP, "layout.tsx"), "utf8");
+  it("imports indexingOpen and does not read SITE_NOINDEX itself", () => {
+    assert.match(src, /import\s*\{[^}]*\bindexingOpen\b[^}]*\}\s*from\s*"@\/lib\/indexing"/);
+    assert.doesNotMatch(src, /process\.env\.SITE_NOINDEX/);
+  });
+  it("sets robots noindex, nofollow whenever indexing is not open", () => {
+    assert.match(src, /siteNoIndex\s*=\s*!indexingOpen/);
+    assert.match(src, /siteNoIndex\s*&&\s*\{\s*robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}\s*\}/);
   });
 });
 
@@ -107,11 +144,11 @@ describe("WL-SEO-6: error.tsx and global-error.tsx", () => {
   for (const file of ["error", "global-error"]) {
     describe(file, () => {
       it("has noindex, a Try again button wired to retry, and plain anchors to / and /app", async () => {
-        // Next 16.4 passes `retry` (docs: file-conventions/error); `reset` is the older, discouraged prop.
+        // N6: Next 16.4 passes `retry` (docs: file-conventions/error). `reset` throws here, so wiring the button to it fails.
         const mod = await import(pathToFileURL(join(APP, `${file}.tsx`)).href);
         const Comp = typeof mod.default === "function" ? mod.default : mod.default.default;
         let calls = 0;
-        const tree = Comp({ error: new Error("x"), retry: () => calls++, reset: () => calls++ });
+        const tree = Comp({ error: new Error("x"), retry: () => calls++, reset: () => { throw new Error("button is wired to reset, not retry"); } });
 
         assert.ok(find(tree, (e) => e.type === "meta" && e.props.name === "robots" && /noindex/.test(String(e.props.content))).length === 1, "no robots noindex <meta>");
         const [btn] = find(tree, (e) => e.type === "button");
@@ -119,7 +156,7 @@ describe("WL-SEO-6: error.tsx and global-error.tsx", () => {
         assert.equal(text(btn), "Try again");
         assert.equal(typeof btn.props.onClick, "function");
         (btn.props.onClick as () => void)();
-        assert.equal(calls, 1, "the button must call retry (or reset) exactly once");
+        assert.equal(calls, 1, "the button must call retry exactly once");
 
         const hrefs = find(tree, (e) => e.type === "a").map((e) => e.props.href);
         assert.deepEqual(hrefs, ["/", "/app"]);
@@ -138,6 +175,8 @@ describe("WL-SEO-6: error.tsx and global-error.tsx", () => {
     assert.equal(g.type, "html");
     assert.equal(g.props.lang, "en-IN");
     assert.equal(find(g, (e) => e.type === "body").length, 1);
+    assert.equal(find(g, (x) => x.type === "title").length, 1, "global-error needs its own <title>");
+    assert.equal(find(g, (x) => x.type === "main").length, 1, "global-error needs a <main>");
     const e = await load("error");
     assert.equal(find(e, (x) => x.type === "html" || x.type === "body").length, 0, "error.tsx must not render a document");
   });

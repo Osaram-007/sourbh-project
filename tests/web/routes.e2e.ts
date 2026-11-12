@@ -511,3 +511,31 @@ describe("WL-SEO-6: branded 404", () => {
     for (const href of ["/", "/app"]) assert.match(html, new RegExp(`<a href="${href}"`), `no plain <a href="${href}">`);
   });
 });
+
+describe("WL-SEO-6 / S1: the 404 sits in the marketing chrome", () => {
+  test("branded h1 plus header logo link, footer, skip link and exactly one main", T, async () => {
+    const { status, html, meta } = await fetchDoc(server.baseUrl, "/no-such-page-b04");
+    assert.equal(status, 404);
+    assert.equal([...html.matchAll(/<h1[\s>]/g)].length, 1);
+    assert.match(html, /<h1[^>]*>Page not found<\/h1>/);
+    assert.match(/<header[\s\S]*?<\/header>/.exec(html)?.[0] ?? "", /<a[^>]*href="\/"/, "no logo link to / in the header");
+    assert.match(html, /<footer\b/);
+    assert.match(html, /<a[^>]*href="#main-content"/, "no skip link");
+    assert.equal([...html.matchAll(/<main[\s>]/g)].length, 1, "exactly one <main>");
+    assert.match(html, /<main[^>]*id="main-content"/);
+    assert.ok(meta.robots.some((r) => /noindex/.test(r)));
+  });
+});
+
+// S6: the OG image's alt is the opengraph-image export, repeated in og and twitter tags.
+describe("WL-SEO-1 / S6: OG image alt and type on /", () => {
+  test("og:image:alt and twitter:image:alt equal the opengraph-image alt export; og:image:type is image/png", T, async () => {
+    const { meta } = await fetchDoc(server.baseUrl, "/");
+    const get = (k: string) => meta.metas.filter((m) => m.key === k).map((m) => m.content);
+    const alt = /export const alt = "([^"]+)"/.exec(fs.readFileSync(path.join(process.cwd(), "src/app/opengraph-image.tsx"), "utf8"))![1];
+    assert.ok(alt.length > 0);
+    assert.deepEqual(get("og:image:alt"), [alt]);
+    assert.deepEqual(get("twitter:image:alt"), [alt]);
+    assert.deepEqual(get("og:image:type"), ["image/png"]);
+  });
+});

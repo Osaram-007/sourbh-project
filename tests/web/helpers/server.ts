@@ -121,12 +121,12 @@ export interface TestServer {
   logs(): string;
 }
 
-/** Build once per test process, then `next start` on a free loopback port. */
-export async function startServer(): Promise<TestServer> {
+/** Build once per test process, then `next start` on a free loopback port. `extraEnv` is added on top of testEnv() (default: nothing, i.e. closed). */
+export async function startServer(extraEnv: Record<string, string> = {}): Promise<TestServer> {
   assertNoEnvFiles();
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const env = testEnv(baseUrl);
+  const env = { ...testEnv(baseUrl), ...extraEnv }; // extraEnv: per-file build settings, e.g. a dummy APP_ORIGIN for the go-live build
   await build(env);
 
   const srv = run(["start", "-p", String(port), "-H", "127.0.0.1"], env);

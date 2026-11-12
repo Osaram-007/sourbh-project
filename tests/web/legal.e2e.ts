@@ -17,6 +17,7 @@ import { fetchDoc } from "./routes-support";
 // behind the root layout's noindex. APP_ENV is not passed to the server by testEnv(), so this is the dev/staging build.
 // Run: npx tsx --test --test-concurrency=1 tests/web/legal.e2e.ts   (first run: npx playwright install chromium)
 process.env.SITE_NOINDEX = "0";
+const GO_LIVE_ENV = { APP_ORIGIN: "https://example.test" }; // indexing needs a flag AND an origin (src/lib/indexing.ts)
 
 const T = { timeout: 60_000 };
 const SLUGS: LegalSlug[] = ["privacy", "terms", "disclaimer", "attributions", "delete-account"];
@@ -24,7 +25,7 @@ let server: TestServer;
 let browser: Browser;
 
 before(async () => {
-  server = await startServer();
+  server = await startServer(GO_LIVE_ENV);
   browser = await launchBrowser();
 }, { timeout: 12 * 60_000 });
 

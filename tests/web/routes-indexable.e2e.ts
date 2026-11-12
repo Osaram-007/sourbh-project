@@ -11,12 +11,13 @@ import { fetchDoc } from "./routes-support";
 // Contract with tests/web/helpers/server.ts: the value reaches `next build` only because the testEnv() allowlist passes
 // SITE_NOINDEX through from process.env (harness.e2e.ts covers that). If it stopped, the first test below would fail.
 process.env.SITE_NOINDEX = "0";
+const GO_LIVE_ENV = { APP_ORIGIN: "https://example.test" }; // indexing needs a flag AND an origin (src/lib/indexing.ts)
 
 const T = { timeout: 60_000 };
 let server: TestServer;
 
 before(async () => {
-  server = await startServer();
+  server = await startServer(GO_LIVE_ENV);
 }, { timeout: 12 * 60_000 });
 
 after(async () => {
@@ -44,30 +45,50 @@ describe("SITE_NOINDEX=0 (go-live)", () => {
   }
 });
 
-// WEB-B04. Indexing is on but the harness gives no APP_ORIGIN, so this build is "open, no origin": still no sitemap URLs.
-describe("SITE_NOINDEX=0 without APP_ORIGIN (WL-SEO-2)", () => {
-  test("robots.txt allows / and disallows the private areas, with no Sitemap line", T, async () => {
+
+// WEB-B04: the real go-live build (SITE_NOINDEX=0 AND APP_ORIGIN=https://example.test). Indexing needs both, so this is
+// the only e2e build where the site is actually open.
+const ORIGIN = GO_LIVE_ENV.APP_ORIGIN;
+
+
+describe("go-live build: robots.txt, sitemap.xml and absolute metadata (WL-SEO-1, WL-SEO-2)", () => {
+  test("robots.txt: allow /, allow /apple-icon, the five disallows, and the Sitemap line", T, async () => {
     const body = await (await fetch(`${server.baseUrl}/robots.txt`)).text();
     assert.match(body, /^Allow: \/\s*$/m);
+    assert.match(body, /^Allow: \/apple-icon\s*$/m);
     for (const p of ["/app", "/admin", "/api", "/login", "/account"]) assert.match(body, new RegExp(`^Disallow: ${p}\\s*$`, "m"));
-    assert.doesNotMatch(body, /^Sitemap:/im);
+    assert.doesNotMatch(body, /^Disallow: \/\s*$/m, "a blanket Disallow: / is still present");
+    assert.match(body, new RegExp(`^Sitemap: ${ORIGIN}/sitemap\\.xml\\s*$`, "m"));
   });
 
-  test("sitemap.xml is an empty urlset (never relative URLs)", T, async () => {
+  test("sitemap.xml is non-empty, absolute, and lists no private path", T, async () => {
     const body = await (await fetch(`${server.baseUrl}/sitemap.xml`)).text();
-    assert.match(body, /<urlset[\s>]/);
-    assert.ok(!body.includes("<loc>"), body);
+    const locs = [...body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    assert.ok(locs.length >= 6, `too few urls: ${locs}`);
+    assert.ok(locs.includes(ORIGIN), "the home page is missing");
+    for (const p of ["/legal/privacy", "/legal/terms", "/legal/disclaimer", "/legal/attributions", "/legal/delete-account"]) assert.ok(locs.includes(ORIGIN + p), `${p} missing`);
+    for (const l of locs) {
+      assert.ok(l.startsWith(ORIGIN), `${l} is not on the origin`);
+      assert.doesNotMatch(new URL(l).pathname, /^\/(app|admin|api|login|account|station)(\/|$)/);
+    }
   });
 
-  test("/ emits no canonical without an origin", T, async () => {
-    const { html } = await fetchDoc(server.baseUrl, "/");
-    assert.doesNotMatch(html, /rel="canonical"/);
+  test("/ has an absolute canonical and absolute og:image / twitter:image on the origin", T, async () => {
+    const { html, meta } = await fetchDoc(server.baseUrl, "/");
+    const canon = /<link[^>]*rel="canonical"[^>]*href="([^"]+)"/.exec(html)?.[1] ?? /<link[^>]*href="([^"]+)"[^>]*rel="canonical"/.exec(html)?.[1];
+    assert.ok(canon, "no canonical link");
+    assert.match(canon, new RegExp(`^${ORIGIN}/?$`));
+    const get = (k: string) => meta.metas.filter((m) => m.key === k).map((m) => m.content);
+    assert.match(get("og:image")[0] ?? "", new RegExp(`^${ORIGIN}/opengraph-image(\\?|$)`));
+    assert.match(get("twitter:image")[0] ?? "", new RegExp(`^${ORIGIN}/opengraph-image(\\?|$)`));
   });
+});
 
-  // WL-SEO-6: the 404's own metadata must say noindex even when the site is open (the site-wide flag no longer does).
-  test("the 404 is still noindex while the site is indexable", T, async () => {
+describe("go-live build: the 404 (WL-SEO-6)", () => {
+  // N5: Next adds a plain "noindex" to every 404 by itself; ours is the exact "noindex, nofollow" of not-found.tsx's export.
+  test("noindex, nofollow comes from our not-found export", T, async () => {
     const { status, meta } = await fetchDoc(server.baseUrl, "/no-such-page-b04");
     assert.equal(status, 404);
-    assert.ok(meta.robots.some((r) => /noindex/.test(r)), `robots: ${meta.robots}`);
+    assert.ok(meta.robots.includes("noindex, nofollow"), `robots: ${meta.robots}`);
   });
 });
