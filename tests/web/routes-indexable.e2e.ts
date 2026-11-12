@@ -58,7 +58,7 @@ describe("go-live build: robots.txt, sitemap.xml and absolute metadata (WL-SEO-1
     assert.match(body, /^Allow: \/apple-icon\s*$/m);
     for (const p of ["/app", "/admin", "/api", "/login", "/account"]) assert.match(body, new RegExp(`^Disallow: ${p}\\s*$`, "m"));
     assert.doesNotMatch(body, /^Disallow: \/\s*$/m, "a blanket Disallow: / is still present");
-    assert.match(body, new RegExp(`^Sitemap: ${ORIGIN}/sitemap\\.xml\\s*$`, "m"));
+    assert.ok(body.split(/\r?\n/).includes(`Sitemap: ${ORIGIN}/sitemap.xml`), body);
   });
 
   test("sitemap.xml is non-empty, absolute, and lists no private path", T, async () => {
@@ -77,10 +77,10 @@ describe("go-live build: robots.txt, sitemap.xml and absolute metadata (WL-SEO-1
     const { html, meta } = await fetchDoc(server.baseUrl, "/");
     const canon = /<link[^>]*rel="canonical"[^>]*href="([^"]+)"/.exec(html)?.[1] ?? /<link[^>]*href="([^"]+)"[^>]*rel="canonical"/.exec(html)?.[1];
     assert.ok(canon, "no canonical link");
-    assert.match(canon, new RegExp(`^${ORIGIN}/?$`));
+    assert.ok(canon === ORIGIN || canon === `${ORIGIN}/`, canon);
     const get = (k: string) => meta.metas.filter((m) => m.key === k).map((m) => m.content);
-    assert.match(get("og:image")[0] ?? "", new RegExp(`^${ORIGIN}/opengraph-image(\\?|$)`));
-    assert.match(get("twitter:image")[0] ?? "", new RegExp(`^${ORIGIN}/opengraph-image(\\?|$)`));
+    assert.ok((get("og:image")[0] ?? "").startsWith(`${ORIGIN}/opengraph-image`), get("og:image")[0]);
+    assert.ok((get("twitter:image")[0] ?? "").startsWith(`${ORIGIN}/opengraph-image`), get("twitter:image")[0]);
   });
 });
 

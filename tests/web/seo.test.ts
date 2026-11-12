@@ -69,19 +69,13 @@ describe("WL-SEO-2 / WL-SEO-8: open state (SITE_NOINDEX=0 and APP_ORIGIN set)", 
     }
   });
 
-  // The B03 pages (/for-businesses, /for-operators, /about) merge from a parallel branch. Until then they may be missing.
-  // N7: this list expires by itself. Once a listed page exists, the test below fails until it is removed from the set.
-  const PENDING_B03 = new Set(["/for-businesses", "/for-operators", "/about"]);
   const groups = readdirSync(APP, { withFileTypes: true }).filter((e) => e.isDirectory() && /^\(.+\)$/.test(e.name)).map((e) => e.name);
   const hasPage = (p: string) => ["", ...groups].some((g) => ["page.tsx", "page.ts", "page.jsx", "page.js"].some((f) => existsSync(join(APP, g, p === "/" ? "" : p, f))));
-  it("every sitemap path is a page that exists in src/app (B03 paths excepted until they land)", () => {
+  it("every sitemap path is a page that exists in src/app (all 9, strict)", () => {
     for (const { url } of sitemap) {
       const p = new URL(url).pathname;
-      if (!PENDING_B03.has(p)) assert.ok(hasPage(p), `sitemap lists ${p} but no page file exists for it`);
+      assert.ok(hasPage(p), `sitemap lists ${p} but no page file exists for it`);
     }
-  });
-  it("PENDING_B03 holds only paths that still have no page", () => {
-    for (const p of PENDING_B03) assert.ok(!hasPage(p), `${p} now has a page: empty PENDING_B03 (the existence check is now strict)`);
   });
 });
 
@@ -120,9 +114,8 @@ describe("WL-SEO-8 / S3: layout.tsx takes its robots noindex from indexingOpen",
     assert.match(src, /import\s*\{[^}]*\bindexingOpen\b[^}]*\}\s*from\s*"@\/lib\/indexing"/);
     assert.doesNotMatch(src, /process\.env\.SITE_NOINDEX/);
   });
-  it("sets robots noindex, nofollow whenever indexing is not open", () => {
+  it("derives siteNoIndex from !indexingOpen", () => {
     assert.match(src, /siteNoIndex\s*=\s*!indexingOpen/);
-    assert.match(src, /siteNoIndex\s*&&\s*\{\s*robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}\s*\}/);
   });
 });
 

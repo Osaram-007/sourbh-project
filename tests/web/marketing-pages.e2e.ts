@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import type { Browser, Page, Request, Route } from "playwright";
 import { launchBrowser, openPage } from "./helpers/browser";
@@ -8,16 +10,17 @@ import { BANNED_COPY, fetchDoc, loadPage } from "./routes-support";
 // WEB-B03: /for-businesses, /for-operators, /about and the shared ContactForm.
 // Criteria: WL-LAND-13, WL-LAND-14, WL-SEO-1, WL-LAND-5 (metadata and visible copy), WL-A11Y (labels, focus, honeypot),
 // T-1 (no numbers, no operator brands), WL-PERF-2 (soft budget). The API (WEB-D07) does not exist: every POST is mocked.
-// Built with SITE_NOINDEX=0 so page-level metadata is not hidden behind the closed-site flag.
+// Built open (SITE_NOINDEX=0 plus a dummy APP_ORIGIN, since B04 needs both) so page-level metadata is not hidden behind the closed-site flag.
 // Run: npx tsx --test --test-concurrency=1 tests/web/marketing-pages.e2e.ts
 process.env.SITE_NOINDEX = "0";
+const ORIGIN = "https://example.test";
 
 const T = { timeout: 90_000 };
 const BUDGET_BYTES = 150_000;
 const PAGES = [
-  { path: "/for-businesses", type: "BUSINESS", h1: "For businesses" },
-  { path: "/for-operators", type: "OPERATOR", h1: "For charging operators" },
-  { path: "/about", type: "OTHER", h1: "About FullCharge" },
+  { path: "/for-businesses", type: "BUSINESS", h1: "For businesses", title: "For businesses" },
+  { path: "/for-operators", type: "OPERATOR", h1: "For charging operators", title: "For charging operators" },
+  { path: "/about", type: "OTHER", h1: "About FullCharge", title: "About" }, // copy deck section 13 titles
 ] as const;
 const API = "**/api/v1/enquiries";
 const GENERIC = "Your message did not send. Please try again.";
@@ -28,7 +31,7 @@ let server: TestServer;
 let browser: Browser;
 
 before(async () => {
-  server = await startServer();
+  server = await startServer({ APP_ORIGIN: ORIGIN });
   browser = await launchBrowser();
 }, { timeout: 12 * 60_000 });
 
@@ -77,7 +80,7 @@ describe("WL-LAND-13 / WL-SEO-1: served pages", () => {
       assert.ok(meta.title!.endsWith("| FullCharge"));
       const c = canonical(html);
       assert.ok(c, "no canonical");
-      assert.equal(new URL(c!, server.baseUrl).pathname, p.path);
+      assert.equal(c, ORIGIN + p.path, "canonical is absolute, on the origin"); // B04: APP_ORIGIN is set in this build
       assert.equal(meta.description.length, 1);
       assert.ok(meta.description[0].length > 20);
       assert.deepEqual(meta.robots, [], "a marketing page must not set its own robots");
@@ -97,6 +100,37 @@ describe("WL-LAND-13 / WL-SEO-1: served pages", () => {
     const m = main(docs["/about"].html);
     assert.match(m, /href="\/legal\/attributions"/);
     assert.match(m, /id="contact"/);
+  });
+});
+
+// B03 + B04 integration: the pages inherit the root title template, OG defaults and the file-convention image.
+describe("B03 x B04: social metadata and sitemap (open build)", () => {
+  const ogAlt = /export const alt = "([^"]+)"/.exec(readFileSync(join(process.cwd(), "src/app/opengraph-image.tsx"), "utf8"))![1];
+  for (const p of PAGES) {
+    test(`${p.path}: one title, OG and Twitter tags inherited`, T, async () => {
+      const { html, meta } = await fetchDoc(server.baseUrl, p.path);
+      const get = (k: string) => meta.metas.filter((m) => m.key === k).map((m) => m.content);
+      const expected = `${p.title} | FullCharge`;
+      assert.equal([...html.matchAll(/<title[\s>]/g)].length, 1, "exactly one <title>");
+      assert.equal(meta.title, expected);
+      assert.deepEqual(get("og:title"), [expected]);
+      assert.equal(meta.description.length, 1);
+      assert.deepEqual(get("og:description"), meta.description);
+      assert.deepEqual(get("og:site_name"), ["FullCharge"]);
+      const img = get("og:image");
+      assert.equal(img.length, 1);
+      assert.ok(img[0].startsWith(`${ORIGIN}/opengraph-image`), `og:image ${img[0]}`);
+      assert.deepEqual(get("og:image:width"), ["1200"]);
+      assert.deepEqual(get("og:image:height"), ["630"]);
+      assert.deepEqual(get("og:image:alt"), [ogAlt]);
+      assert.deepEqual(get("twitter:card"), ["summary_large_image"]);
+    });
+  }
+
+  test("the sitemap lists all three pages, absolute", T, async () => {
+    const body = await (await fetch(`${server.baseUrl}/sitemap.xml`)).text();
+    const locs = [...body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    for (const p of PAGES) assert.ok(locs.includes(ORIGIN + p.path), `${p.path} missing from ${locs}`);
   });
 });
 
