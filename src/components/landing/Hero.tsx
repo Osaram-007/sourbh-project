@@ -6,13 +6,13 @@ import { CONTAINER, Eyebrow, ExampleTag } from "./shared";
 
 // "Use my location": a plain link to /app that works with no JS. The inline script (same approach as the header:
 // 0 bytes of first-load JS; the static marketing CSP allows it, ADR-0016) asks for the position ONLY on click, then
-// hands it to /app through sessionStorage key "fc_geo", never the URL (WL-LAND-6). Value: {lat,lng,t} or {denied:true}.
-// The /app page (WEB-B13) should read it once and remove it; denied means "default centre plus the location-off message".
+// hands it to /app through sessionStorage key "fc_geo", never the URL (WL-LAND-6). Value: {lat,lng,t} or {error:code} (1 denied, 2 unavailable, 3 timeout).
+// The /app page (WEB-B13) should read it once and remove it; error 1 means "default centre plus the location-off message".
 const LOCATE_SCRIPT =
   '(function(d){var a=d.getElementById("fc-locate");if(!a)return;' +
-  'a.addEventListener("click",function(e){if(!navigator.geolocation)return;e.preventDefault();a.setAttribute("aria-busy","true");' +
+  'a.addEventListener("click",function(e){if(!navigator.geolocation||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();if(a.getAttribute("aria-busy")==="true")return;a.setAttribute("aria-busy","true");' +
   'function g(v){try{sessionStorage.setItem("fc_geo",JSON.stringify(v))}catch(x){}location.assign("/app")}' +
-  'navigator.geolocation.getCurrentPosition(function(p){g({lat:p.coords.latitude,lng:p.coords.longitude,t:Date.now()})},function(){g({denied:true})},{timeout:10000,maximumAge:60000})});' +
+  'navigator.geolocation.getCurrentPosition(function(p){g({lat:p.coords.latitude,lng:p.coords.longitude,t:Date.now()})},function(e){g({error:e.code})},{timeout:10000,maximumAge:60000})});' +
   'addEventListener("pageshow",function(){a.removeAttribute("aria-busy")})})(document)';
 
 /**
@@ -35,7 +35,7 @@ function ExampleCard() {
       </div>
       <ul className="mt-4 space-y-2 text-body-sm text-ink-muted">
         <li className="flex items-center gap-2"><Icon name="plug" className="size-4" />DC connector</li>
-        <li className="flex items-center gap-2"><Icon name="gauge" className="size-4" />Price not listed</li>
+        <li className="flex items-center gap-2">Price not listed</li>
       </ul>
       <ButtonLink href="/app" className="mt-4 w-full">View Details</ButtonLink>
     </div>
@@ -79,7 +79,7 @@ export function Hero() {
           </form>
 
           <div className="mt-4 flex flex-wrap gap-3">
-            <ButtonLink id="fc-locate" href="/app" variant="secondary">
+            <ButtonLink id="fc-locate" href="/app" variant="secondary" className="aria-busy:cursor-progress aria-busy:opacity-60">
               <Icon name="pin" className="size-4" />
               Use my location
             </ButtonLink>

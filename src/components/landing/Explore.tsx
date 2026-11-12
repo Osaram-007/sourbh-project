@@ -28,13 +28,13 @@ const SAMPLES: { name: string; state: AvailabilityState; note?: string }[] = [
 /** Built from HTML, not an image: no photos, no operator names, no numbers, no prices, no scores (T-1, T-3, T-4, WDEC-12). Not interactive. */
 function AppPreview() {
   return (
-    <figure className="relative">
+    <div className="relative min-w-0">
       <div aria-hidden="true" className="absolute -inset-3 rounded-sheet bg-mint lg:-inset-5" />
-      <div className="relative overflow-hidden rounded-card border border-border bg-surface shadow-popover">
+      <figure className="relative min-w-0 overflow-hidden rounded-card border border-border bg-surface shadow-popover">
         <figcaption className="border-b border-border bg-mint px-4 py-2 text-body-sm font-semibold text-ink">
           Example preview. Sample chargers only.
         </figcaption>
-        <div className="space-y-3 p-4">
+        <div className="space-y-3 p-3 sm:p-4">
           <div className="flex min-h-target items-center gap-2 rounded-control border border-border-strong px-3 text-body text-ink-muted">
             <Icon name="search" className="size-4" />
             Search a city, address or charger
@@ -65,14 +65,14 @@ function AppPreview() {
             ))}
           </ul>
         </div>
-      </div>
-    </figure>
+      </figure>
+    </div>
   );
 }
 
 export function Explore() {
   return (
-    <section aria-labelledby="explore-title" className="bg-surface">
+    <section aria-labelledby="explore-title" className="overflow-x-clip bg-surface">
       <div className={`${CONTAINER} grid items-center gap-12 py-section lg:grid-cols-2 lg:gap-16 lg:py-24`}>
         <div>
           <Eyebrow>EXPLORE CHARGERS</Eyebrow>
@@ -80,19 +80,19 @@ export function Explore() {
             Find stations that match your needs.
           </h2>
           <p className="mt-5 text-lead text-ink-muted">Search charging locations in India.</p>
-          <dl className="mt-8 grid gap-x-6 gap-y-5 sm:grid-cols-2">
+          <ul className="mt-8 grid gap-x-6 gap-y-5 sm:grid-cols-2">
             {FEATURES.map((f) => (
-              <div key={f.title} className="flex items-start gap-3">
+              <li key={f.title} className="flex items-start gap-3">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-mint text-brand">
                   <Icon name={f.icon} className="size-5" />
                 </span>
                 <div>
-                  <dt className="font-bold text-ink">{f.title}</dt>
-                  <dd className="text-body-sm text-ink-muted">{f.text}</dd>
+                  <p className="font-bold text-ink">{f.title}</p>
+                  <p className="text-body-sm text-ink-muted">{f.text}</p>
                 </div>
-              </div>
+              </li>
             ))}
-          </dl>
+          </ul>
           <ButtonLink href="/app" className="mt-8">Explore Chargers</ButtonLink>
         </div>
         <AppPreview />
