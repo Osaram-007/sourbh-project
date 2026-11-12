@@ -115,12 +115,12 @@ export const MARKERS: Record<string, string> = {
 
 /** WL-LAND-5 banned phrases; applied to metadata here (WL-SEO-5). Case-insensitive, hyphen/space/none equivalent. */
 export const BANNED_COPY: RegExp[] = [
-  /real[-\s]?time/i,
+  /real[\s\u00ad\u2010-\u2015-]?time/i,
   /reliab/i,
   /trip planner/i,
   /plan a trip/i,
   /highway/i,
   /guarantee/i,
-  /100%/,
-  /all major/i,
+  /100\s?%|100 percent/i,
+  /\ball major/i,
 ];
