@@ -65,8 +65,8 @@ describe("WL-LAND-1: / is a static page that does not need the database", () => 
     // WEB-B02: the real landing page, not the old placeholder whose whole h1 was the brand name.
     const h1s = [...html.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/g)].map((m) => m[1].replace(/<[^>]+>/g, "").trim());
     assert.equal(h1s.length, 1, "exactly one h1");
-    assert.match(h1s[0], /EV charger/i);
-    assert.notEqual(h1s[0], "FullCharge");
+    assert.match(h1s[0], /EV charg/i); // also fits headline alternative B, "Find EV charging stations in India."
+    assert.ok(h1s[0].length > 0 && h1s[0] !== "FullCharge");
   });
 
   test("/ does not vary with session cookies (anonymous and 'signed-in' get the same page)", T, async () => {
@@ -319,14 +319,86 @@ describe("WEB-B02: landing page behaviour (WL-LAND-4, -6, -7, -9, WL-SEO-3, WL-P
     const v = JSON.parse(r.stored ?? "null");
     assert.deepEqual(Object.keys(v).sort(), ["lat", "lng", "t"]);
     assert.ok(Math.abs(v.lat - 18.52) < 1e-6 && Math.abs(v.lng - 73.85) < 1e-6);
-    assert.deepEqual(r.captured.cspViolations, [], "the inline script was blocked by the CSP");
+    // No CSP assertion: this branch sends no CSP (WEB-S05 is still todo), so a CSP-violation check would pass vacuously.
     assert.deepEqual(r.captured.pageErrors, []);
   });
 
-  test("Use my location: denial writes {denied:true} to fc_geo and still lands on a bare /app", T, async () => {
+  test("Use my location: denial writes {error:1} to fc_geo and still lands on a bare /app", T, async () => {
     const r = await locate(false);
     assert.equal(r.onLoad, 0);
-    assert.deepEqual(JSON.parse(r.stored ?? "null"), { denied: true });
+    assert.deepEqual(JSON.parse(r.stored ?? "null"), { error: 1 });
     assert.equal(r.url.search, "");
+  });
+
+  test("N2 in a real browser: a ctrl-click does not preventDefault or ask for the position; a plain click asks exactly once", T, async () => {
+    const { page, close } = await openPage(browser, "desktop");
+    try {
+      const ctx = page.context();
+      await ctx.grantPermissions(["geolocation"]);
+      await ctx.setGeolocation({ latitude: 18.52, longitude: 73.85 });
+      await ctx.addInitScript(() => {
+        const w = window as unknown as { __geoCalls: number };
+        w.__geoCalls = 0;
+        const orig = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
+        navigator.geolocation.getCurrentPosition = (...a: Parameters<typeof orig>) => {
+          w.__geoCalls++;
+          return orig(...a);
+        };
+      });
+      await page.route((u) => u.origin !== new URL(server.baseUrl).origin && u.protocol.startsWith("http"), (r) => r.abort());
+      await page.route((u) => u.pathname === "/app", (r) => r.fulfill(STUB_APP));
+      await page.goto(server.baseUrl + "/", { waitUntil: "load" });
+      const link = page.getByRole("link", { name: "Use my location" });
+      // Observe defaultPrevented after the page handler ran.
+      const prevented = await link.evaluate((el) => {
+        let p: boolean | null = null;
+        document.addEventListener("click", (e) => { p = e.defaultPrevented; e.preventDefault(); /* stop the new-tab nav */ }, { once: true });
+        el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+        return p;
+      });
+      assert.equal(prevented, false, "a ctrl-click must keep the default link behaviour");
+      assert.equal(await page.evaluate(() => (window as unknown as { __geoCalls: number }).__geoCalls), 0);
+      await link.click();
+      await page.waitForURL("**/app", { timeout: 20_000 });
+    } finally {
+      await close();
+    }
+  });
+
+  test("S2: whole served page is truthful: only CCS2 contains a digit, no operator brand, exactly 2 Example tags and 1 Example preview", T, async () => {
+    const { html } = await fetchDoc(server.baseUrl, "/");
+    const body = /<main\b[\s\S]*<\/main>/.exec(html)?.[0] ?? "";
+    assert.ok(body.length > 1000, "no <main> found");
+    const text = body
+      .replace(/<(script|style)\b[\s\S]*?<\/\1>/g, " ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/\s+/g, " ");
+    const digits = [...text.matchAll(/\S*\d\S*/g)].map((m) => m[0]);
+    assert.deepEqual(digits.filter((d) => !/^CCS2\W*$/.test(d)), [], "visible text contains a digit other than CCS2 (copy deck rule); report, do not widen");
+    assert.doesNotMatch(text, /Tata|Statiq|Ather|BPCL|Bharat Petroleum|Charge\s?Zone|Jio|Zeon|Fortum|Magenta|Kazam|Ola\b|OpenChargeMap|Open Charge Map|OpenStreetMap|EVYatra/i, "operator or source brand in the visible text");
+    assert.equal((body.replace(/<(script|style)\b[\s\S]*?<\/\1>/g, "").match(/>Example</g) ?? []).length, 2, "Example tags: hero card + vehicle sample");
+    assert.equal((text.match(/Example preview/g) ?? []).length, 1);
+  });
+
+  test("WL-LAND-2: hero, the 4-step strip, then the h2 sections in spec 8.6 order", T, async () => {
+    const { html } = await fetchDoc(server.baseUrl, "/");
+    const at = (re: RegExp) => {
+      const i = html.search(re);
+      assert.ok(i >= 0, `${re} not found`);
+      return i;
+    };
+    const order = [
+      at(/<h1\b[^>]*id="hero-title"/),
+      at(/<ol\b[\s\S]*?Find[\s\S]*?Check[\s\S]*?Compare[\s\S]*?Go[\s\S]*?<\/ol>/), // 4-step strip
+      at(/<h2\b[^>]*id="problem-title"/),
+      at(/<h2\b[^>]*id="explore-title"/),
+      at(/<h2\b[^>]*id="status-title"/),
+      at(/<h2\b[^>]*id="ev-title"/),
+      at(/<h2\b[^>]*id="work-title"/), // B2B teaser
+      at(/<footer\b/),
+    ];
+    assert.deepEqual(order, [...order].sort((a, b) => a - b), "sections are out of spec 8.6 order");
+    assert.equal(new Set(order).size, order.length);
   });
 });

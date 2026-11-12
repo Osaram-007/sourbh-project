@@ -10,6 +10,8 @@ import vm from "node:vm";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AVAILABILITY_DISCLAIMER } from "../../src/components/data/AvailabilityDisclaimer";
 import { Hero } from "../../src/components/landing/Hero";
+import { BuiltForYourEv } from "../../src/components/landing/BuiltForYourEv";
+import { Explore } from "../../src/components/landing/Explore";
 import { KnowBeforeYouGo } from "../../src/components/landing/KnowBeforeYouGo";
 import { STATUS, STATUS_ORDER } from "../../src/lib/status";
 
@@ -42,26 +44,32 @@ describe("WL-LAND-6: hero search", () => {
 describe("WL-LAND-6: Use my location inline script (run in a vm with fakes; the real-browser run is in routes.e2e.ts)", () => {
   const src = /<script>([\s\S]*?)<\/script>/.exec(hero)?.[1];
   type Cb = (p: { coords: { latitude: number; longitude: number } }) => void;
-  type Geo = { getCurrentPosition: (ok: Cb, err: () => void) => void };
+  type Err = (e: { code: number }) => void;
+  type Geo = { getCurrentPosition: (ok: Cb, err: Err) => void };
+  type Mods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean };
   function run(geo: Geo | undefined, storage: { setItem: (k: string, v: string) => void }) {
-    const calls = { geo: 0, assigned: [] as string[], prevented: 0, click: () => {} };
+    const calls = { geo: 0, assigned: [] as string[], prevented: 0, click: (_m: Mods = {}) => {}, pageshow: () => {} };
+    // The link mirrors a real anchor: a attribute map behind get/set/removeAttribute.
+    const attrs = new Map<string, string>();
     const link = {
-      addEventListener: (_t: string, f: (e: { preventDefault(): void }) => void) => (calls.click = () => f({ preventDefault: () => calls.prevented++ })),
-      setAttribute() {},
-      removeAttribute() {},
+      addEventListener: (_t: string, f: (e: Mods & { preventDefault(): void }) => void) => (calls.click = (m = {}) => f({ ...m, preventDefault: () => calls.prevented++ })),
+      getAttribute: (k: string) => attrs.get(k) ?? null,
+      setAttribute: (k: string, v: string) => void attrs.set(k, String(v)),
+      removeAttribute: (k: string) => void attrs.delete(k),
     };
-    const navigator = { geolocation: geo && { getCurrentPosition: (ok: Cb, err: () => void) => { calls.geo++; geo.getCurrentPosition(ok, err); } } };
+    const navigator = { geolocation: geo && { getCurrentPosition: (ok: Cb, err: Err) => { calls.geo++; geo.getCurrentPosition(ok, err); } } };
     vm.runInNewContext(src!, {
       document: { getElementById: (id: string) => (id === "fc-locate" ? link : null) },
       navigator,
       sessionStorage: storage,
       location: { assign: (u: string) => calls.assigned.push(u) },
-      addEventListener() {},
+      addEventListener: (_t: string, f: () => void) => (calls.pageshow = f),
       Date,
       JSON,
     });
-    return calls;
+    return Object.assign(calls, { attrs });
   }
+  const grant: Geo = { getCurrentPosition: (ok) => ok({ coords: { latitude: 19.07, longitude: 72.87 } }) };
   it("exists and is the only script in the hero", () => {
     assert.ok(src, "no inline script in Hero");
     assert.equal((hero.match(/<script/g) ?? []).length, 1);
@@ -75,7 +83,7 @@ describe("WL-LAND-6: Use my location inline script (run in a vm with fakes; the 
   });
   it("on grant stores {lat,lng,t} under fc_geo and goes to a bare /app (no coordinates in the URL)", () => {
     const store: Record<string, string> = {};
-    const c = run({ getCurrentPosition: (ok) => ok({ coords: { latitude: 19.07, longitude: 72.87 } }) }, { setItem: (k, v) => (store[k] = v) });
+    const c = run(grant, { setItem: (k, v) => (store[k] = v) });
     c.click();
     assert.equal(c.geo, 1);
     assert.equal(c.prevented, 1);
@@ -87,15 +95,40 @@ describe("WL-LAND-6: Use my location inline script (run in a vm with fakes; the 
     assert.equal(typeof v.t, "number");
     assert.deepEqual(c.assigned, ["/app"]);
   });
-  it("on denial stores {denied:true} and goes to /app", () => {
-    const store: Record<string, string> = {};
-    const c = run({ getCurrentPosition: (_ok, err) => err() }, { setItem: (k, v) => (store[k] = v) });
+  for (const [code, name] of [[1, "denied"], [2, "unavailable"], [3, "timeout"]] as const) {
+    it(`N1: a geolocation error with code ${code} (${name}) stores {error:${code}} and goes to /app`, () => {
+      const store: Record<string, string> = {};
+      const c = run({ getCurrentPosition: (_ok, err) => err({ code }) }, { setItem: (k, v) => (store[k] = v) });
+      c.click();
+      assert.deepEqual(JSON.parse(store.fc_geo), { error: code });
+      assert.deepEqual(c.assigned, ["/app"]);
+    });
+  }
+  it("N2: ctrl, meta, shift and alt clicks make no geolocation call and do not preventDefault", () => {
+    for (const mod of ["ctrlKey", "metaKey", "shiftKey", "altKey"] as const) {
+      const c = run(grant, { setItem: () => assert.fail("stored on a modified click") });
+      c.click({ [mod]: true });
+      assert.equal(c.geo, 0, mod);
+      assert.equal(c.prevented, 0, `${mod} must keep the default link behaviour`);
+      assert.deepEqual(c.assigned, [], mod);
+      assert.equal(c.attrs.get("aria-busy"), undefined, `${mod} must not mark the link busy`);
+    }
+  });
+  it("N2: a second click while busy makes no second call; pageshow clears busy so it works again", () => {
+    // A provider that never answers keeps the link busy.
+    const c = run({ getCurrentPosition: () => {} }, { setItem: () => {} });
     c.click();
-    assert.deepEqual(JSON.parse(store.fc_geo), { denied: true });
-    assert.deepEqual(c.assigned, ["/app"]);
+    assert.equal(c.geo, 1);
+    assert.equal(c.attrs.get("aria-busy"), "true");
+    c.click();
+    assert.equal(c.geo, 1, "second click while busy asked again");
+    c.pageshow();
+    assert.equal(c.attrs.get("aria-busy"), undefined);
+    c.click();
+    assert.equal(c.geo, 2, "after pageshow the link must work again");
   });
   it("still navigates if sessionStorage throws; without geolocation the link stays a normal link", () => {
-    const c = run({ getCurrentPosition: (ok) => ok({ coords: { latitude: 1, longitude: 2 } }) }, { setItem: () => { throw new Error("quota"); } });
+    const c = run(grant, { setItem: () => { throw new Error("quota"); } });
     c.click();
     assert.deepEqual(c.assigned, ["/app"]);
     const d = run(undefined, { setItem: () => {} });
@@ -111,16 +144,16 @@ describe("WL-LAND-4: Example labels", () => {
     assert.match(hero, /Example charging station/);
     assert.doesNotMatch(hero, /<img|<picture|background-image/i, "photo on the sample card");
     assert.doesNotMatch(hero, /Tata|Statiq|Ather|BPCL|ChargeZone|Charge Zone|Jio|Zeon|Fortum|Magenta|Kazam|Ola\b/i, "operator brand");
-    assert.doesNotMatch(hero, /★|\bstars?\b|\d(\.\d)?\s*\/\s*5\b|\brating\b|\bscore\b|\breviews?\b/i, "score");
+    assert.doesNotMatch(hero.replace(/<[^>]*>/g, " "), /★|\bstars?\b|\d(\.\d)?\s*\/\s*\d+\b|\brating\b|\bscore\b|\breviews?\b/i, "score");
     assert.doesNotMatch(hero, /₹|\bRs\.?\s*\d|\d+\s*kW|\d+\s*km\b/i, "invented number or price");
   });
-  it("any landing section that mentions an app preview also carries an Example label", () => {
-    const withPreview = readdirSync(LANDING_DIR)
-      .filter((f) => f.endsWith(".tsx"))
-      .map((f) => [f, readFileSync(join(LANDING_DIR, f), "utf8")] as const)
-      .filter(([, code]) => /preview|mock/i.test(code));
-    // The anti-vacuity guard is deliberately not an assert on length: if no section has a preview, there is nothing to label.
-    for (const [f, code] of withPreview) assert.match(code, /ExampleTag|\bExample\b/, `${f} shows a preview without an Example label`);
+  it("N7: rendered output, not source: the app preview and the vehicle sample each carry an Example label", () => {
+    const explore = renderToStaticMarkup(<Explore />);
+    assert.match(explore, /Example preview/);
+    assert.match(explore, /<figcaption\b[^>]*>\s*Example preview/, "the caption inside the preview figure must say Example");
+    const ev = renderToStaticMarkup(<BuiltForYourEv />);
+    assert.match(ev, />Example</);
+    assert.match(ev, /Example compact EV/);
   });
 });
 
