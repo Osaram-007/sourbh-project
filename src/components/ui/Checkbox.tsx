@@ -11,13 +11,15 @@ type CheckboxProps = Omit<ComponentProps<"input">, "id" | "className" | "type" |
   error?: ReactNode;
   /** Applies to the wrapper (width, margin). */
   className?: string;
+  /** false: the error is not role="alert" (forms that focus the first invalid field instead). */
+  announce?: boolean;
 };
 
 /**
  * Labelled native checkbox. The box is 24px (the WCAG 2.5.8 target) and uses the brand accent colour.
  * Server-compatible (no "use client", no hooks).
  */
-export function Checkbox({ id, label, hint, error, className = "", ...rest }: CheckboxProps) {
+export function Checkbox({ id, label, hint, error, className = "", announce, ...rest }: CheckboxProps) {
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
       <div className="flex items-start gap-3">
@@ -38,7 +40,7 @@ export function Checkbox({ id, label, hint, error, className = "", ...rest }: Ch
         </FieldHint>
       ) : null}
       {error ? (
-        <FieldError id={id} className="pl-9">
+        <FieldError id={id} className="pl-9" announce={announce}>
           {error}
         </FieldError>
       ) : null}

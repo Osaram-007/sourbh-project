@@ -7,7 +7,7 @@ export type EnquiryType = (typeof ENQUIRY_TYPES)[number];
 
 export const ENQUIRY_MAX = { name: 100, email: 254, organisation: 150, message: 2000 } as const;
 
-/** Honeypot: a hidden input that real users never fill. The server must accept the request shape and treat a non-empty value as spam. */
+/** Honeypot: a hidden input that real users never fill. A honeypot hit must return the same 2xx as a real success and store nothing. */
 export const ENQUIRY_HONEYPOT = "website";
 
 export interface EnquiryRequest {
@@ -18,13 +18,17 @@ export interface EnquiryRequest {
   type: EnquiryType;
   /** Optional: sent as "" when blank (the deck has no "enter a message" error). */
   message: string;
-  /** Must be true. */
-  consent: boolean;
+  /** Must be true (z.literal(true) on the server). */
+  consent: true;
   /** Honeypot ("website"): always "" from a real user. */
   website: string;
 }
 
-/** Optional 400 body: which fields failed. The form maps these to inline errors; anything else shows the generic error. */
+/**
+ * Optional 400 body: which fields failed. The form maps these to inline errors; anything else shows the generic error.
+ * `fields` deliberately has no `organisation` or `type` key: the form cannot get those wrong in normal use, so an error
+ * on either falls back to the generic error.
+ */
 export interface EnquiryErrorBody {
   fields?: Partial<Record<"name" | "email" | "message" | "consent", string>>;
 }

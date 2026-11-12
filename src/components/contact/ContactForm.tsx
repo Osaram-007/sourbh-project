@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { controlClass, FieldError, FieldHint, fieldA11y } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { controlClass, Field, fieldA11y } from "@/components/ui/Field";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { ENQUIRY_HONEYPOT, ENQUIRY_MAX, type EnquiryErrorBody, type EnquiryRequest, type EnquiryType } from "@/lib/enquiries";
 
 // Copy deck section C. Field errors do not announce on their own (announce={false}); on submit the first invalid field
@@ -20,8 +23,6 @@ const FIELDS = ["name", "email", "message", "consent"] as const;
 type FieldName = (typeof FIELDS)[number];
 type Errors = Partial<Record<FieldName, string>>;
 
-const LABEL = "text-body-sm font-semibold text-ink";
-
 export function ContactForm({ defaultType = "OTHER" }: { defaultType?: EnquiryType }) {
   const [errors, setErrors] = useState<Errors>({});
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -29,6 +30,7 @@ export function ContactForm({ defaultType = "OTHER" }: { defaultType?: EnquiryTy
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const successRef = useRef<HTMLDivElement>(null);
+  const sendingRef = useRef(false);
 
   // Focus after render so the field's aria-invalid / aria-describedby are already in place when it is read.
   useEffect(() => {
@@ -41,12 +43,13 @@ export function ContactForm({ defaultType = "OTHER" }: { defaultType?: EnquiryTy
   function showFieldErrors(next: Errors) {
     setErrors(next);
     const first = FIELDS.find((f) => next[f]);
-    if (first) setFocusId(`contact-${first}`);
+    setFocusId(first ? `contact-${first}` : null);
     return !!first;
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (sendingRef.current) return; // aria-disabled keeps the button focusable, so Enter / click still arrive here
     const form = e.currentTarget;
     const el = (n: string) => form.elements.namedItem(n) as HTMLInputElement;
     const v = (n: string) => el(n).value;
@@ -68,6 +71,7 @@ export function ContactForm({ defaultType = "OTHER" }: { defaultType?: EnquiryTy
       consent: true,
       website: v(ENQUIRY_HONEYPOT),
     };
+    sendingRef.current = true;
     setSending(true);
     try {
       const res = await fetch("/api/v1/enquiries", {
@@ -90,6 +94,7 @@ export function ContactForm({ defaultType = "OTHER" }: { defaultType?: EnquiryTy
     } catch {
       setFormError(MSG.failed);
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -102,44 +107,27 @@ export function ContactForm({ defaultType = "OTHER" }: { defaultType?: EnquiryTy
     );
   }
 
-  const a11y = (f: FieldName, hint?: string) => fieldA11y(`contact-${f}`, { hint, error: errors[f] });
-  const err = (f: FieldName, cls?: string) =>
-    errors[f] ? (
-      <FieldError id={`contact-${f}`} announce={false} className={cls}>
-        {errors[f]}
-      </FieldError>
-    ) : null;
-
   return (
-    <form onSubmit={onSubmit} noValidate className="relative flex max-w-xl flex-col gap-5">
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="contact-name" className={LABEL}>Name</label>
-        <input id="contact-name" name="name" required maxLength={ENQUIRY_MAX.name} autoComplete="name" className={controlClass} {...a11y("name")} />
-        {err("name")}
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="contact-email" className={LABEL}>Email</label>
-        <input id="contact-email" name="email" type="email" required maxLength={ENQUIRY_MAX.email} autoComplete="email" className={controlClass} {...a11y("email")} />
-        {err("email")}
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="contact-organisation" className={LABEL}>Organisation</label>
-        <input id="contact-organisation" name="organisation" maxLength={ENQUIRY_MAX.organisation} autoComplete="organization" className={controlClass} />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="contact-type" className={LABEL}>Type of enquiry</label>
-        <select id="contact-type" name="type" defaultValue={defaultType} className={controlClass}>
-          <option value="BUSINESS">Business</option>
-          <option value="OPERATOR">Charging operator</option>
-          <option value="OTHER">Other</option>
-        </select>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="contact-message" className={LABEL}>Message</label>
-        <FieldHint id="contact-message">{MESSAGE_HINT}</FieldHint>
-        <textarea id="contact-message" name="message" rows={5} maxLength={ENQUIRY_MAX.message} className={`${controlClass} py-2`} {...a11y("message", MESSAGE_HINT)} />
-        {err("message")}
-      </div>
+    // method="post", no action: without JS a native submit must never put the fields in the URL (WL-SEC-8).
+    <form method="post" onSubmit={onSubmit} noValidate className="relative flex max-w-xl flex-col gap-5">
+      <Input id="contact-name" name="name" label="Name" required maxLength={ENQUIRY_MAX.name} autoComplete="name" error={errors.name} announce={false} />
+      <Input id="contact-email" name="email" type="email" label="Email" required maxLength={ENQUIRY_MAX.email} autoComplete="email" error={errors.email} announce={false} />
+      <Input id="contact-organisation" name="organisation" label="Organisation (optional)" maxLength={ENQUIRY_MAX.organisation} autoComplete="organization" />
+      <Select id="contact-type" name="type" label="Type of enquiry" defaultValue={defaultType}>
+        <option value="BUSINESS">Business</option>
+        <option value="OPERATOR">Charging operator</option>
+        <option value="OTHER">Other</option>
+      </Select>
+      <Field id="contact-message" label="Message (optional)" hint={MESSAGE_HINT} error={errors.message} announce={false}>
+        <textarea
+          id="contact-message"
+          name="message"
+          rows={5}
+          maxLength={ENQUIRY_MAX.message}
+          className={`${controlClass} py-2`}
+          {...fieldA11y("contact-message", { hint: MESSAGE_HINT, error: errors.message })}
+        />
+      </Field>
       {/* Honeypot: off-screen, out of the tab order and the accessibility tree. Real users never fill it. */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
         <label>
@@ -147,19 +135,23 @@ export function ContactForm({ defaultType = "OTHER" }: { defaultType?: EnquiryTy
           <input name={ENQUIRY_HONEYPOT} type="text" tabIndex={-1} autoComplete="off" defaultValue="" />
         </label>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-start gap-3">
-          <input id="contact-consent" name="consent" type="checkbox" required className="size-target-min shrink-0 cursor-pointer accent-brand focus-ring" {...a11y("consent")} />
-          <label htmlFor="contact-consent" className="pt-px text-body text-ink">
+      <Checkbox
+        id="contact-consent"
+        name="consent"
+        required
+        error={errors.consent}
+        announce={false}
+        label={
+          <>
             I agree that FullCharge can store my message and contact me about it. I have read the{" "}
             <a href="/legal/privacy" className="font-semibold underline">Privacy Policy</a>.
-          </label>
-        </div>
-        {err("consent", "pl-9")}
-      </div>
+          </>
+        }
+      />
       {formError ? <p role="alert" className="text-body font-semibold text-ink">{formError}</p> : null}
       <div>
-        <Button type="submit" disabled={sending}>Send Message</Button>
+        {/* aria-disabled, not disabled: the focused button keeps focus, and the label change below is what a screen reader hears. */}
+        <Button type="submit" aria-disabled={sending}>{sending ? "Sending…" : "Send Message"}</Button>
       </div>
     </form>
   );

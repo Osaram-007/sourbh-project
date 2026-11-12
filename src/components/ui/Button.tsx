@@ -12,7 +12,7 @@ export type ButtonVariant = "primary" | "secondary" | "quiet";
 export type ButtonSize = "md" | "sm";
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-control font-semibold focus-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0";
+  "inline-flex items-center justify-center gap-2 rounded-control font-semibold focus-ring disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:shrink-0";
 
 // Classes appear literally so Tailwind generates them. hover: only applies on hover-capable pointers, so active:
 // is the feedback a tap gets on touch.

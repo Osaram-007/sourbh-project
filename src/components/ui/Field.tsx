@@ -68,6 +68,7 @@ export function Field({
   hint,
   error,
   className = "",
+  announce = true,
   children,
 }: {
   id: string;
@@ -75,6 +76,8 @@ export function Field({
   hint?: ReactNode;
   error?: ReactNode;
   className?: string;
+  /** false: the error does not use role="alert" (see FieldError). */
+  announce?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -84,7 +87,7 @@ export function Field({
       </label>
       {hint ? <FieldHint id={id}>{hint}</FieldHint> : null}
       {children}
-      {error ? <FieldError id={id}>{error}</FieldError> : null}
+      {error ? <FieldError id={id} announce={announce}>{error}</FieldError> : null}
     </div>
   );
 }
