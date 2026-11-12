@@ -2,15 +2,14 @@ import type { Metadata } from "next";
 import { ContactForm } from "@/components/contact/ContactForm";
 import { CONTAINER } from "@/components/landing/shared";
 
-// Copy deck sections 11, 13 and C. `absolute`: the root title template (WEB-B04) must not add a second suffix.
+// Copy deck sections 11, 13 and C. The root title template (WEB-B04) adds " | FullCharge"; OG fields come from the root defaults and the file-based image.
 // Left out, not invented (all [FOUNDER], Q-C9 / Q-W12 open): paragraph 3 ("does not run charging stations", needs
 // confirmation), "Who runs FullCharge" (legal entity, address) and "Grievance officer" (#grievance-officer).
 const description = "What FullCharge is, where its charger information comes from, and how to get in touch.";
 export const metadata: Metadata = {
-  title: { absolute: "About | FullCharge" },
+  title: "About",
   description,
   alternates: { canonical: "/about" },
-  openGraph: { title: "About | FullCharge", description },
 };
 
 export default function AboutPage() {

@@ -2,15 +2,14 @@ import type { Metadata } from "next";
 import { ContactForm } from "@/components/contact/ContactForm";
 import { CONTAINER } from "@/components/landing/shared";
 
-// Copy deck sections 10, 13 and C. `absolute`: the root title template (WEB-B04) must not add a second suffix.
+// Copy deck sections 10, 13 and C. The root title template (WEB-B04) adds " | FullCharge"; OG fields come from the root defaults and the file-based image.
 // Left out, not invented: the [VERIFY] source-approval sentence (true only once G7/Q-C12 are live) and the
 // [FOUNDER: one line on what FullCharge offers operators] line.
 const description = "Tell FullCharge about your charging stations or network. Send us a message through the contact form.";
 export const metadata: Metadata = {
-  title: { absolute: "For charging operators | FullCharge" },
+  title: "For charging operators",
   description,
   alternates: { canonical: "/for-operators" },
-  openGraph: { title: "For charging operators | FullCharge", description },
 };
 
 export default function ForOperatorsPage() {

@@ -122,6 +122,6 @@ processes the CSS during `npm run build` on the deploy VM, and a lockfile-only `
 - `APP_ORIGIN` and `SITE_NOINDEX` are both read at **build time** (`src/lib/indexing.ts`). Changing either needs a rebuild.
 - Indexing is open only when `SITE_NOINDEX=0` **and** `APP_ORIGIN` is set. Otherwise robots.txt is `Disallow: /`, the sitemap is empty and every page is `noindex`.
 - `APP_ORIGIN=https://<domain>` must be in the VM `/opt/full-charge/.env` before any production build, because `deploy.sh` builds on the VM. Without it, every page `og:image` and `twitter:image` points at `http://localhost:3000`.
-- Staging leaves `SITE_NOINDEX` unset.
+- Staging sets `SITE_NOINDEX=1` (T3-U8). Unset is equally closed, because only `"0"` opens indexing.
 - The CI build prints a `metadataBase` warning. That is expected, because the CI build is never deployed.
 - Before the index flip (WEB-U04), view the source of `/` and check that `og:image` is on `https://<domain>`.

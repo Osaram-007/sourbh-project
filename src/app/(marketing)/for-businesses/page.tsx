@@ -2,14 +2,13 @@ import type { Metadata } from "next";
 import { ContactForm } from "@/components/contact/ContactForm";
 import { CONTAINER } from "@/components/landing/shared";
 
-// Copy deck sections 9, 13 and C. `absolute`: the root title template (WEB-B04) must not add a second suffix.
+// Copy deck sections 9, 13 and C. The root title template (WEB-B04) adds " | FullCharge"; OG fields come from the root defaults and the file-based image.
 // [FOUNDER: one line on what FullCharge offers businesses] is left out: no copy is invented (Q-W13).
 const description = "Tell FullCharge about your business. Send us a message through the contact form.";
 export const metadata: Metadata = {
-  title: { absolute: "For businesses | FullCharge" },
+  title: "For businesses",
   description,
   alternates: { canonical: "/for-businesses" },
-  openGraph: { title: "For businesses | FullCharge", description },
 };
 
 export default function ForBusinessesPage() {
