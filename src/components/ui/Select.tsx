@@ -11,15 +11,17 @@ type SelectProps = Omit<ComponentProps<"select">, "id" | "className" | "multiple
   error?: ReactNode;
   /** Applies to the wrapper (width, margin). */
   className?: string;
+  /** false: the error is not role="alert" (forms that focus the first invalid field instead). */
+  announce?: boolean;
 };
 
 /**
  * Labelled native <select> (single choice), 44px tall. `children` are the <option>s. The native control keeps
  * keyboard and mobile pickers working. Server-compatible (no "use client", no hooks); the chevron is inline SVG.
  */
-export function Select({ id, label, hint, error, className, children, ...rest }: SelectProps) {
+export function Select({ id, label, hint, error, className, announce, children, ...rest }: SelectProps) {
   return (
-    <Field id={id} label={label} hint={hint} error={error} className={className}>
+    <Field id={id} label={label} hint={hint} error={error} className={className} announce={announce}>
       <div className="relative">
         <select {...rest} id={id} {...fieldA11y(id, { hint, error })} className={`${controlClass} appearance-none pr-10`}>
           {children}

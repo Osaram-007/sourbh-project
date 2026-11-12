@@ -1,6 +1,6 @@
 // Links for the marketing header and footer (WEB-A05). One list, so the two never drift.
 // Wording and targets follow the copy deck, sections 1 and 8. WL-LAND-3: no Trip Planner.
-// Pages that do not exist yet: /for-businesses and /for-operators (WEB-B03), /about (WEB-B03), /login (WEB-B06).
+// /for-businesses, /for-operators and /about exist (WEB-B03). /login does not exist yet (WEB-B06).
 
 export interface SiteLink {
   label: string;

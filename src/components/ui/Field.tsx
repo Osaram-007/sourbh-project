@@ -34,10 +34,12 @@ export function FieldHint({ id, children, className = "" }: { id: string; childr
  * Text is ink, not red: red is only 4.45:1 on mint. The error is carried by the icon, the word "Error" and the text,
  * and the control border turns red (3:1 non-text), so it is never colour alone.
  * role="alert": an error that appears after a submit or blur is announced when it is inserted, not only on refocus.
+ * `announce={false}` drops role="alert" for forms that show many errors at once: focus the first invalid field instead
+ * (its aria-describedby then reads the error) so a screen reader is not hit with a burst of alerts.
  */
-export function FieldError({ id, children, className = "" }: { id: string; children: ReactNode; className?: string }) {
+export function FieldError({ id, children, className = "", announce = true }: { id: string; children: ReactNode; className?: string; announce?: boolean }) {
   return (
-    <p id={`${id}-error`} role="alert" className={`flex items-start gap-1.5 text-body-sm font-medium text-ink ${className}`}>
+    <p id={`${id}-error`} role={announce ? "alert" : undefined} className={`flex items-start gap-1.5 text-body-sm font-medium text-ink ${className}`}>
       <svg
         viewBox="0 0 24 24"
         fill="none"
@@ -66,6 +68,7 @@ export function Field({
   hint,
   error,
   className = "",
+  announce = true,
   children,
 }: {
   id: string;
@@ -73,6 +76,8 @@ export function Field({
   hint?: ReactNode;
   error?: ReactNode;
   className?: string;
+  /** false: the error does not use role="alert" (see FieldError). */
+  announce?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -82,7 +87,7 @@ export function Field({
       </label>
       {hint ? <FieldHint id={id}>{hint}</FieldHint> : null}
       {children}
-      {error ? <FieldError id={id}>{error}</FieldError> : null}
+      {error ? <FieldError id={id} announce={announce}>{error}</FieldError> : null}
     </div>
   );
 }

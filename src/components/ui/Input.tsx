@@ -11,6 +11,8 @@ type InputProps = Omit<ComponentProps<"input">, "id" | "className" | "aria-descr
   error?: ReactNode;
   /** Applies to the wrapper (width, margin). */
   className?: string;
+  /** false: the error is not role="alert" (forms that focus the first invalid field instead). */
+  announce?: boolean;
 };
 
 /**
@@ -18,9 +20,9 @@ type InputProps = Omit<ComponentProps<"input">, "id" | "className" | "aria-descr
  * `required`, `name` and so on. Never block paste (WL-A11Y-6); OTP fields use autoComplete="one-time-code".
  * Server-compatible (no "use client", no hooks).
  */
-export function Input({ id, label, hint, error, className, type = "text", ...rest }: InputProps) {
+export function Input({ id, label, hint, error, className, announce, type = "text", ...rest }: InputProps) {
   return (
-    <Field id={id} label={label} hint={hint} error={error} className={className}>
+    <Field id={id} label={label} hint={hint} error={error} className={className} announce={announce}>
       <input {...rest} id={id} type={type} {...fieldA11y(id, { hint, error })} className={controlClass} />
     </Field>
   );
