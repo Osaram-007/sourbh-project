@@ -1,11 +1,11 @@
 import type { MetadataRoute } from "next";
+import { APP_ORIGIN, indexingOpen } from "@/lib/indexing";
 
-// WL-SEO-2/8. Same fail-closed rule as the root layout (build-time env).
+// WL-SEO-2/8. Rules match by prefix, so "Disallow: /app" would also block /apple-icon; the longer Allow wins.
 export default function robots(): MetadataRoute.Robots {
-  const origin = process.env.APP_ORIGIN;
-  if (process.env.SITE_NOINDEX !== "0") return { rules: { userAgent: "*", disallow: "/" } };
+  if (!indexingOpen) return { rules: { userAgent: "*", disallow: "/" } };
   return {
-    rules: { userAgent: "*", allow: "/", disallow: ["/app", "/admin", "/api", "/login", "/account"] },
-    ...(origin && { sitemap: `${new URL(origin).origin}/sitemap.xml` }),
+    rules: { userAgent: "*", allow: ["/", "/apple-icon"], disallow: ["/app", "/admin", "/api", "/login", "/account"] },
+    sitemap: `${new URL(APP_ORIGIN!).origin}/sitemap.xml`,
   };
 }

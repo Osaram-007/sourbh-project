@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { APP_ORIGIN, indexingOpen } from "@/lib/indexing";
 import "./globals.css";
 
 // ADR-0017: the root layout mounts no providers and reads no cookies/headers,
@@ -19,13 +20,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Both values are read when the page is built (static routes), so changing
-// either needs a rebuild. APP_ORIGIN has no fallback: unset means no metadataBase,
-// so a forgotten value never produces localhost URLs.
-const APP_ORIGIN = process.env.APP_ORIGIN;
-// WL-SEO-8: the soft-launch switch. Fails closed: only an explicit SITE_NOINDEX=0 makes
-// the site indexable; unset or any other value keeps every page out of search.
-const siteNoIndex = process.env.SITE_NOINDEX !== "0";
+// APP_ORIGIN and SITE_NOINDEX are read at build time (src/lib/indexing.ts), so changing either needs a rebuild.
+// APP_ORIGIN has no fallback: unset means no metadataBase, and Next then resolves og:image/twitter:image against
+// http://localhost:3000 (see deploy/DEPLOY.md, WEB-B04). WL-SEO-8: indexing is open only with SITE_NOINDEX=0 and an origin.
+const siteNoIndex = !indexingOpen;
 
 export const metadata: Metadata = {
   metadataBase: APP_ORIGIN ? new URL(APP_ORIGIN) : undefined,

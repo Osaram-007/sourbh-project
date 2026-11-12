@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { APP_ORIGIN, indexingOpen } from "@/lib/indexing";
 
 // WL-SEO-2/7: indexable marketing + legal routes only; never /app, /admin, /api, /login, /account or stations.
 // Fails closed like the root layout: needs APP_ORIGIN and SITE_NOINDEX=0, both read at build time.
@@ -15,8 +16,7 @@ const ROUTES = [
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const origin = process.env.APP_ORIGIN;
-  if (!origin || process.env.SITE_NOINDEX !== "0") return [];
-  const base = new URL(origin).origin;
+  if (!indexingOpen) return [];
+  const base = new URL(APP_ORIGIN!).origin;
   return ROUTES.map((path) => ({ url: base + (path === "/" ? "" : path) }));
 }
