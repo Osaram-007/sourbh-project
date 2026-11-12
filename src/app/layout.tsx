@@ -29,9 +29,13 @@ const siteNoIndex = process.env.SITE_NOINDEX !== "0";
 
 export const metadata: Metadata = {
   metadataBase: APP_ORIGIN ? new URL(APP_ORIGIN) : undefined,
-  title: "FullCharge | Find EV charging stations in India",
+  // Copy deck section 13. WL-SEO-5: no "real-time" or "all major networks" (WL-LAND-5, T-2, T-3).
+  // A page that sets its own openGraph replaces this object, so it repeats siteName/type.
+  title: { default: "FullCharge: Find EV chargers in India", template: "%s | FullCharge" },
   description:
-    "Find EV charging stations in India, with connector types and prices where they are available.",
+    "Search EV chargers in India by city, address or charger name. See connector types, price where listed, and availability where networks share it.",
+  openGraph: { siteName: "FullCharge", type: "website", locale: "en_IN" },
+  twitter: { card: "summary_large_image" },
   ...(siteNoIndex && { robots: { index: false, follow: false } }),
 };
 
