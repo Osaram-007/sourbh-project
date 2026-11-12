@@ -10,7 +10,7 @@ import { CONTAINER, Eyebrow, ExampleTag } from "./shared";
 // The /app page (WEB-B13) should read it once and remove it; error 1 means "default centre plus the location-off message".
 const LOCATE_SCRIPT =
   '(function(d){var a=d.getElementById("fc-locate");if(!a)return;' +
-  'a.addEventListener("click",function(e){if(!navigator.geolocation||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();if(a.getAttribute("aria-busy")==="true")return;a.setAttribute("aria-busy","true");' +
+  'a.addEventListener("click",function(e){if(!navigator.geolocation||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();if(a.getAttribute("aria-busy")==="true")return;a.setAttribute("aria-busy","true");setTimeout(function(){a.removeAttribute("aria-busy")},15e3);' +
   'function g(v){try{sessionStorage.setItem("fc_geo",JSON.stringify(v))}catch(x){}location.assign("/app")}' +
   'navigator.geolocation.getCurrentPosition(function(p){g({lat:p.coords.latitude,lng:p.coords.longitude,t:Date.now()})},function(e){g({error:e.code})},{timeout:10000,maximumAge:60000})});' +
   'addEventListener("pageshow",function(){a.removeAttribute("aria-busy")})})(document)';
