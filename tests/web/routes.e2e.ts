@@ -330,7 +330,7 @@ describe("WEB-B02: landing page behaviour (WL-LAND-4, -6, -7, -9, WL-SEO-3, WL-P
     assert.equal(r.url.search, "");
   });
 
-  test("N2 in a real browser: a ctrl-click does not preventDefault or ask for the position; a plain click asks exactly once", T, async () => {
+  test("N2 in a real browser: a ctrl-click does not preventDefault or ask for the position; a plain click stores the granted position in fc_geo", T, async () => {
     const { page, close } = await openPage(browser, "desktop");
     try {
       const ctx = page.context();
@@ -360,6 +360,10 @@ describe("WEB-B02: landing page behaviour (WL-LAND-4, -6, -7, -9, WL-SEO-3, WL-P
       assert.equal(await page.evaluate(() => (window as unknown as { __geoCalls: number }).__geoCalls), 0);
       await link.click();
       await page.waitForURL("**/app", { timeout: 20_000 });
+      // A plain link would reach /app without the script, so the script's work is the granted position in sessionStorage.
+      const v = JSON.parse((await page.evaluate(() => sessionStorage.getItem("fc_geo"))) ?? "null");
+      assert.deepEqual(Object.keys(v).sort(), ["lat", "lng", "t"]);
+      assert.ok(Math.abs(v.lat - 18.52) < 1e-6 && Math.abs(v.lng - 73.85) < 1e-6);
     } finally {
       await close();
     }

@@ -48,7 +48,7 @@ describe("WL-LAND-6: Use my location inline script (run in a vm with fakes; the 
   type Geo = { getCurrentPosition: (ok: Cb, err: Err) => void };
   type Mods = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; altKey?: boolean };
   function run(geo: Geo | undefined, storage: { setItem: (k: string, v: string) => void }) {
-    const calls = { geo: 0, assigned: [] as string[], prevented: 0, click: (() => {}) as (m?: Mods) => void, pageshow: () => {} };
+    const calls = { geo: 0, assigned: [] as string[], prevented: 0, timers: [] as [() => void, number][], click: (() => {}) as (m?: Mods) => void, pageshow: () => {} };
     // The link mirrors a real anchor: a attribute map behind get/set/removeAttribute.
     const attrs = new Map<string, string>();
     const link = {
@@ -64,6 +64,8 @@ describe("WL-LAND-6: Use my location inline script (run in a vm with fakes; the 
       sessionStorage: storage,
       location: { assign: (u: string) => calls.assigned.push(u) },
       addEventListener: (_t: string, f: () => void) => (calls.pageshow = f),
+      // Records (fn, ms) and never auto-runs, so a test decides when the busy timeout fires.
+      setTimeout: (fn: () => void, ms: number) => void calls.timers.push([fn, ms]),
       Date,
       JSON,
     });
@@ -114,18 +116,22 @@ describe("WL-LAND-6: Use my location inline script (run in a vm with fakes; the 
       assert.equal(c.attrs.get("aria-busy"), undefined, `${mod} must not mark the link busy`);
     }
   });
-  it("N2: a second click while busy makes no second call; pageshow clears busy so it works again", () => {
-    // A provider that never answers keeps the link busy.
+  it("N2: a second click while busy makes no second call; the 15 s timeout (or pageshow) clears busy so it works again", () => {
+    // A provider that never answers leaves the link busy until the timeout fires.
     const c = run({ getCurrentPosition: () => {} }, { setItem: () => {} });
     c.click();
     assert.equal(c.geo, 1);
     assert.equal(c.attrs.get("aria-busy"), "true");
+    assert.equal(c.timers.length, 1, "expected one busy-clearing timer");
+    assert.equal(c.timers[0][1], 15000);
     c.click();
     assert.equal(c.geo, 1, "second click while busy asked again");
-    c.pageshow();
-    assert.equal(c.attrs.get("aria-busy"), undefined);
+    c.timers[0][0](); // the 15 s timeout fires
+    assert.equal(c.attrs.get("aria-busy"), undefined, "the timeout must clear busy");
     c.click();
-    assert.equal(c.geo, 2, "after pageshow the link must work again");
+    assert.equal(c.geo, 2, "after the timeout the link must work again");
+    c.pageshow(); // bfcache return also clears busy
+    assert.equal(c.attrs.get("aria-busy"), undefined);
   });
   it("still navigates if sessionStorage throws; without geolocation the link stays a normal link", () => {
     const c = run(grant, { setItem: () => { throw new Error("quota"); } });
