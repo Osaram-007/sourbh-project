@@ -1,0 +1,132 @@
+# Production reverse proxy (ADR-0021, amends ADR-0007). Install at /etc/caddy/Caddyfile.
+# Requires Caddy 2.11 or later (`roll_interval`); distro packages are older (DEPLOY.md "T3-01").
+# Env (set via caddy.service, see DEPLOY.md "T3-01"): SITE_DOMAIN, STAGING_DOMAIN, OWNER_IP.
+# OWNER_IP may be a space-separated list (IPv4 plus IPv6). {$VAR} is substituted textually, so
+# an empty OWNER_IP still parses: `not remote_ip` matches nothing and everyone, the owner
+# included, gets 404 (fails safe). DEPLOY.md guards the validate command against it.
+# Automatic HTTPS and the HTTP->HTTPS redirect are Caddy defaults and are left alone.
+#
+# No `trusted_proxies`: Caddy treats the TCP peer as the client and REPLACES any
+# client-sent X-Forwarded-For with that address (ADR-0009 reads the rightmost entry).
+# remote_ip below likewise matches the TCP peer, never a header.
+#
+# Path matching: Caddy's `path` matcher is case-insensitive, matches the percent-decoded
+# path, merges duplicate slashes and resolves dot segments before comparing. The trailing
+# `*` makes each pattern a prefix, so `/admin`, `/admin/` and `/admin/x` all match.
+# That alone is NOT bypass-proof: Caddy decodes an encoded slash and then cleans the path,
+# but proxies the raw URI, and Next does not decode it when matching dynamic routes, so the
+# two could disagree about which route a request is. The @encoded_slash rule below closes
+# that by rejecting any path containing an encoded slash (%2F) or backslash (%5C) with 400.
+
+# Default logger (5xx error entries, journald): same query filter as the access log, so map
+# coordinates and search terms never reach journald either.
+{
+	log {
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete lat
+					delete lng
+					delete bbox
+					delete q
+					delete north
+					delete south
+					delete east
+					delete west
+				}
+			}
+		}
+	}
+}
+
+(common) {
+	encode zstd gzip
+
+	# HSTS (WDEC-9). Start at 300 s; raise to 31536000 after 7 stable days (DEPLOY.md).
+	# No includeSubDomains: there is no preload (ADR-0021), and www and staging each set their
+	# own HSTS through this snippet, so nothing needs to inherit from the apex.
+	header Strict-Transport-Security "max-age=300"
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 50MiB
+			# Roll daily so the age limit below means days (size-only rolling would not).
+			roll_interval 24h
+			roll_keep 14
+			# Retention is provisional, pending Q-C10 (legal decision).
+			roll_keep_for 336h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete lat
+					delete lng
+					delete bbox
+					delete q
+					delete north
+					delete south
+					delete east
+					delete west
+				}
+				# Caddy already logs these as REDACTED; deleting hides even that they were sent.
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+				request>headers>Proxy-Authorization delete
+				resp_headers>Set-Cookie delete
+			}
+		}
+	}
+}
+
+{$SITE_DOMAIN} {
+	import common
+
+	# {http.request.uri} is the escaped URI Next receives. Keep this before @owner_only:
+	# same-directive handles keep source order when matchers are not a single path.
+	@encoded_slash `{http.request.uri}.matches("(?i)^[^?]*%(2f|5c)")`
+	handle @encoded_slash {
+		respond 400
+	}
+
+	@owner_only {
+		path /admin* /api/admin* /api/analytics* /api/sync*
+		not remote_ip {$OWNER_IP}
+	}
+	handle @owner_only {
+		respond 404
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3000 {
+			transport http {
+				# Node closes idle sockets after 5 s; never reuse one it may have closed.
+				keepalive 4s
+			}
+		}
+	}
+}
+
+www.{$SITE_DOMAIN} {
+	import common
+	redir https://{$SITE_DOMAIN}{uri} 301
+}
+
+# Staging is owner-only, so the encoded-slash rule is not repeated here.
+{$STAGING_DOMAIN} {
+	import common
+	header X-Robots-Tag noindex
+
+	@not_owner not remote_ip {$OWNER_IP}
+	handle @not_owner {
+		respond 404
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3001 {
+			transport http {
+				# Node closes idle sockets after 5 s; never reuse one it may have closed.
+				keepalive 4s
+			}
+		}
+	}
+}
