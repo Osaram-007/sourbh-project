@@ -139,3 +139,13 @@ processes the CSS during `npm run build` on the deploy VM, and a lockfile-only `
   - **`https://*.google.com`:** narrow it in `connect-src`, `img-src` and `frame-src` to the hosts the soak shows. The wildcard covers `script.google.com`.
   - **Fonts:** confirm the Roboto stylesheet and fonts load with no violations.
 - **No report endpoint in V1**, per ADR-0016.
+
+## T3-02
+
+The web unit now runs `next start -H 127.0.0.1 -p 3000`, so only the reverse proxy (T3-01, Caddy) can reach it.
+
+- `setup-runner.sh` installs the unit files at bootstrap; `deploy.sh` does not. The repo change has no effect until someone reinstalls the unit on the VM.
+- **Do not reinstall it before T3-01 (Caddy) proxies to 127.0.0.1:3000.** Otherwise the site goes offline.
+- Install: copy `deploy/systemd/full-charge-web.service` to `/etc/systemd/system/`, run `systemctl daemon-reload`, then `systemctl restart full-charge-web`.
+- Verify: `ss -ltnp` shows `127.0.0.1:3000` (not `0.0.0.0` or `*`), and `curl http://127.0.0.1:3000/` from the VM returns 200.
+- Anything on the VM that reaches the app must use `127.0.0.1`, not `localhost`. `localhost` can resolve to `::1`, which the app no longer listens on.
