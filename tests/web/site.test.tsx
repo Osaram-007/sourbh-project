@@ -352,7 +352,10 @@ describe("links from marketing pages to /app are plain <a> or prefetch={false}",
         assert.match(m[0], /prefetch=\{false\}/, `${relative(ROOT, f)}: ${m[0]}`);
       }
     }
-    assert.ok(seen >= 1, "control: the delete-account page has a <Link>, so the scan should see one");
+    // No page uses <Link> today (the marketing group is plain <a>, ADR-0016), so the control is synthetic: the scan's own regex must see one.
+    assert.ok(/<Link\b[^>]*>/.test('<Link href="/x" prefetch={false}>'), "control: the <Link> regex works");
+    assert.ok(files.length > 10, `control: the scan read ${files.length} real files`);
+    void seen;
   });
 
   it("no router.prefetch and no <Link prefetch> variants that turn it back on", () => {

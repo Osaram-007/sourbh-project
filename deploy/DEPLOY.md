@@ -125,3 +125,17 @@ processes the CSS during `npm run build` on the deploy VM, and a lockfile-only `
 - Staging sets `SITE_NOINDEX=1` (T3-U8). Unset is equally closed, because only `"0"` opens indexing.
 - The CI build prints a `metadataBase` warning. That is expected, because the CI build is never deployed.
 - Before the index flip (WEB-U04), view the source of `/` and check that `og:image` is on `https://<domain>`.
+
+## WEB-S05: security headers and CSP
+
+- **What ships.** `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` and `X-Frame-Options: DENY` go on every route. The static CSP (`next.config.ts`) is the floor on every path except `/api/` and `/_next/` (marketing, legal, the 404, metadata routes, case variants like `/APP`, and router prefetches, which send `next-router-prefetch`). The per-request nonce CSP (`src/proxy.ts`) replaces it on `/app*`, `/account*`, `/login` and `/admin*`, with Maps origins on `/app` only and Firebase origins on `/login` only. `/login` also gets COOP `same-origin-allow-popups`.
+- **`CSP_ENFORCE` is read at build time** (inlined into both `next.config.ts` and the proxy). Without `CSP_ENFORCE=1` the site sends `Content-Security-Policy-Report-Only`. Flipping it needs a rebuild: put `CSP_ENFORCE=1` in `/opt/full-charge/.env` and deploy (`deploy.sh` rebuilds); a restart alone does nothing.
+- **Hard gate: do not set `CSP_ENFORCE=1` until `/app`, `/admin/*`, `/login` and `/account` render dynamically**, for example via `await connection()` in their layouts (expected with T0-01, WEB-B07 and WEB-B19). Today `/app` and `/admin/*` are prerendered, so their scripts carry no nonce and enforcing would block them. Also, navigation between CSP surfaces (marketing, /app, /login, /admin, /account) must be a full page load (plain `<a>` or `location.assign`), never `next/link`: a client-side transition keeps the old document's policy.
+- **Before enforcing on production:**
+  - Check `/app` on staging in report-only with a real Maps key and confirm there are no `securitypolicyviolation` events.
+  - WEB-B06 confirms the Firebase origin list against a real login.
+  - **`'unsafe-eval'` on `/app`:** report-only cannot show eval violations while `'unsafe-eval'` is in the policy. Do one staging build of `/app` without it, then use the map (pan, zoom, cluster click). If no `script-src` eval violations appear, drop it.
+  - **`connect-src`:** watch for violations on any `*.googleapis.com` host other than `maps.googleapis.com`. Re-check when WEB-B13 adds a Map ID or `AdvancedMarkerElement`.
+  - **`https://*.google.com`:** narrow it in `connect-src`, `img-src` and `frame-src` to the hosts the soak shows. The wildcard covers `script.google.com`.
+  - **Fonts:** confirm the Roboto stylesheet and fonts load with no violations.
+- **No report endpoint in V1**, per ADR-0016.
