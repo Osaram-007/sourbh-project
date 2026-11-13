@@ -13,12 +13,14 @@ type Job = {
   needs?: string | string[];
   if?: string;
   "runs-on"?: string | string[];
+  "timeout-minutes"?: number;
   concurrency?: string | { group?: string; "cancel-in-progress"?: unknown };
   services?: Record<string, { image?: string; env?: Record<string, string> }>;
   steps: Step[];
 };
 type Wf = {
-  on: { push: { branches?: string[]; "paths-ignore"?: string[] }; workflow_dispatch?: unknown };
+  on: { push: { branches?: string[]; paths?: string[] }; workflow_dispatch?: unknown };
+  permissions?: { contents?: string };
   concurrency?: Job["concurrency"];
   jobs: { build: Job; deploy: Job };
 };
@@ -30,9 +32,10 @@ const list = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ===
 const idx = (re: RegExp) => build.steps.findIndex((s) => re.test(s.run ?? ""));
 
 describe("deploy workflow (T3-04)", () => {
-  it("pushes on main only, ignoring mobile/** and docs/**, with manual dispatch", () => {
+  it("pushes on main only, excluding mobile/** and docs/** except the two docs tests read, with manual dispatch", () => {
     assert.deepEqual(wf.on.push.branches, ["main"]);
-    assert.deepEqual([...(wf.on.push["paths-ignore"] ?? [])].sort(), ["docs/**", "mobile/**"]);
+    // Order matters: a later positive pattern re-includes a file excluded earlier.
+    assert.deepEqual(wf.on.push.paths, ["**", "!mobile/**", "!docs/**", "docs/api-v1.md", "docs/asset-register.md"]);
     assert.ok("workflow_dispatch" in wf.on);
   });
 
@@ -47,6 +50,25 @@ describe("deploy workflow (T3-04)", () => {
     assert.ok(c, "deploy must be covered by a concurrency group");
     const cancel = typeof c === "string" ? undefined : c["cancel-in-progress"];
     assert.ok(cancel === undefined || cancel === false, `cancel-in-progress=${String(cancel)}`);
+  });
+
+  it("gives main its own concurrency group, separate from every other ref", () => {
+    const c = wf.concurrency;
+    assert.ok(c && typeof c !== "string");
+    assert.equal(
+      c.group,
+      "${{ github.ref == 'refs/heads/main' && 'production-deploy' || format('ci-{0}', github.ref) }}",
+    );
+    assert.equal(c["cancel-in-progress"], false);
+    assert.equal(deploy.concurrency, undefined, "job-level concurrency would let older commits deploy late");
+  });
+
+  it("has job timeouts of 60 minutes or less and read-only token permissions", () => {
+    for (const j of [build, deploy]) {
+      const t = j["timeout-minutes"];
+      assert.ok(typeof t === "number" && t > 0 && t <= 60, `timeout-minutes=${String(t)}`);
+    }
+    assert.equal(wf.permissions?.contents, "read");
   });
 
   it("runs a Postgres 13+ service whose DB name carries a test token", () => {

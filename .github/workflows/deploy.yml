@@ -3,13 +3,21 @@ name: Deploy
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - "mobile/**"
-      - "docs/**"
+    paths:
+      - "**"
+      - "!mobile/**"
+      - "!docs/**"
+      - "docs/api-v1.md"
+      - "docs/asset-register.md"
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
+# Main shares one group (serialised, never cancelled); other refs get their own so a
+# branch dry-run can never cancel a pending main deploy.
 concurrency:
-  group: production-deploy
+  group: ${{ github.ref == 'refs/heads/main' && 'production-deploy' || format('ci-{0}', github.ref) }}
   cancel-in-progress: false
 
 env:
@@ -19,10 +27,11 @@ jobs:
   build:
     name: Build & typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # prisma.config.ts requires DATABASE_URL to be set just to load the config
-    # (prisma generate/validate don't actually connect to it) — dummy value only.
+    # (prisma generate/validate don't actually connect to it) — unreachable dummy (port 1), never a real DB.
     env:
-      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+      DATABASE_URL: "postgresql://ci:ci@127.0.0.1:1/ci"
     # Real Postgres for npm test (ADR-0011 harness needs PG 13+ for DROP DATABASE ... WITH (FORCE)).
     # Throwaway CI-only credentials; the service container dies with the job.
     services:
@@ -66,6 +75,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, full-charge-vm]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Deploy
