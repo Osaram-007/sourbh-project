@@ -2,7 +2,7 @@
  * T1-03 self-tests for the backend harness. Always runs, except the DB round trip, which is
  * skipped without TEST_DATABASE_URL.
  */
-import { assertTestDatabaseUrl, closeTestDb, dbSkip, perProcessDb, resetDb, setupTestDb, testDbName, testPool } from "./db";
+import { assertTestDatabaseUrl, closeTestDb, dbSkip, perProcessDb, resetDb, setupTestDb, TEST_DATABASE_URL, testDbName, testPool } from "./db";
 import { makeRequest, routeCtx, TEST_APP_ORIGIN } from "./request";
 import {
   JWKS_ENV,
@@ -23,6 +23,8 @@ import {
 import { execFileSync } from "node:child_process";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { NextResponse } from "next/server";
 import { createRemoteJWKSet, jwtVerify, errors } from "jose";
 import { route } from "@/lib/v1/http";
@@ -118,7 +120,8 @@ describe("request builder", () => {
   });
 
   it("importing request.ts overrides an inherited APP_ORIGIN", () => {
-    const out = execFileSync(process.execPath, ["--import", "tsx", "-e", "import(\"./tests/backend/helpers/request.ts\").then(() => console.log(process.env.APP_ORIGIN))"], {
+    const target = JSON.stringify(pathToFileURL(path.join(__dirname, "request.ts")).href);
+    const out = execFileSync(process.execPath, ["--import", "tsx", "-e", `import(${target}).then(() => console.log(process.env.APP_ORIGIN))`], {
       env: { ...process.env, APP_ORIGIN: "https://inherited.example" },
       encoding: "utf8",
     });
@@ -162,8 +165,14 @@ describe("db guard", () => {
     assert.notEqual(perProcessDb(url("test"), 1).name, "test");
     assert.throws(() => perProcessDb(url("fullcharge"), 1), /"test" token/);
   });
+  it("rejects a derived name over 63 bytes (Postgres would truncate the pid)", () => {
+    const base60 = "a".repeat(55) + "_test"; // 60 bytes; "_" + 4-digit pid makes 65
+    assert.equal(Buffer.byteLength(base60), 60);
+    assert.throws(() => perProcessDb(url(base60), 1234), /over 63 bytes/);
+    assert.equal(perProcessDb(url("a".repeat(50) + "_test"), 1234).name.length, 60); // fits
+  });
   it("pins DATABASE_URL: to the per-process DB, or to a closed port when TEST_DATABASE_URL is unset", () => {
-    if (testDbName) assert.ok(process.env.DATABASE_URL!.endsWith(`/${testDbName}`));
+    if (TEST_DATABASE_URL) assert.equal(process.env.DATABASE_URL, perProcessDb(TEST_DATABASE_URL).url);
     else assert.equal(process.env.DATABASE_URL, "postgresql://x:x@127.0.0.1:1/x_test");
   });
 });

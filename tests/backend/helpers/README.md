@@ -21,6 +21,8 @@ TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:5433/fullcharge_test npm 
 $env:TEST_DATABASE_URL = "postgresql://postgres:test@127.0.0.1:5433/fullcharge_test"; npm test
 ```
 
+Leftovers: a Ctrl-C'd run leaves `<base>_<pid>` databases behind. Clean up with `docker rm -f fc-test-pg`, then re-run the `docker run` line above. Use one Postgres server per machine: pids can collide across machines, containers, or WSL sharing a server. `DROP DATABASE ... WITH (FORCE)` needs Postgres 13 or later, so CI images must be 13+.
+
 Without `TEST_DATABASE_URL`, every DB test is reported as skipped (not passed). Import `helpers/db` before any module that imports `src/lib/db.ts`: it points `DATABASE_URL` at the per-process database (or, with no `TEST_DATABASE_URL`, at a closed port).
 
 - JWKS: the verifier must read `FIREBASE_JWKS_URL` / `FIREBASE_PROJECT_ID` lazily, at first use, not at module import. Call `before(startJwks)` / `after(stopJwks)` once per file at file scope; a stop/start picks a new port.

@@ -47,6 +47,10 @@ export function perProcessDb(baseUrl: string, pid: number = process.pid): { name
   assertTestDatabaseUrl(baseUrl);
   const u = new URL(baseUrl);
   const name = `${dbName(baseUrl)}_${pid}`;
+  // Postgres truncates identifiers to 63 bytes, which could drop the pid digits and collide with the base name.
+  if (Buffer.byteLength(name) > 63) {
+    throw new Error(`derived database name "${name}" is over 63 bytes: use a shorter TEST_DATABASE_URL database name`);
+  }
   assertTestName(name);
   u.pathname = `/${encodeURIComponent(name)}`;
   return { name, url: u.toString() };
@@ -94,13 +98,13 @@ export async function setupTestDb(): Promise<void> {
     stdio: "pipe",
     timeout: 60_000,
   });
-  migrated = true;
   // Catches an import-order mistake: the app's pool was built from some other DATABASE_URL first.
   const { db } = await import("@/lib/db");
   const rows = await db.$queryRaw<{ d: string }[]>`SELECT current_database() AS d`;
   if (rows[0]?.d !== perProcess.name) {
     throw new Error(`the app's db client is on "${rows[0]?.d}", not "${perProcess.name}": import helpers/db before any module that imports @/lib/db`);
   }
+  migrated = true; // only after the pin check, so a failed check is not skipped by a later setupTestDb()
 }
 
 /** The per-process pool, for tests that need raw SQL. */
@@ -122,17 +126,14 @@ export async function resetDb(): Promise<void> {
 }
 
 /**
- * End the harness pool and drop the per-process DB (best effort). The app's own pool (src/lib/db.ts
- * does not export it, and PrismaPg does not end an external pool) is cut off by the FORCE drop, so
- * its admin_shutdown error (57P01) is swallowed; DB route-test files may also linger up to pg's 10 s idle timeout.
+ * End the harness pool and drop the per-process DB (best effort). The FORCE drop also closes the app pool's
+ * sockets. Prisma's adapter keeps an 'error' listener on the app pool while connected, so the FORCE drop's
+ * 57P01 is absorbed. Do not call `db.$disconnect()` before `closeTestDb()`.
  */
 export async function closeTestDb(): Promise<void> {
   await pool?.end();
   pool = undefined;
   if (!perProcess || !migrated) return;
-  process.on("uncaughtException", (e: Error & { code?: string }) => {
-    if (e.code !== "57P01") throw e;
-  });
   try {
     await withAdmin((c) => c.query(`DROP DATABASE IF EXISTS ${quoteIdent(perProcess.name)} WITH (FORCE)`));
   } catch {
