@@ -125,3 +125,13 @@ processes the CSS during `npm run build` on the deploy VM, and a lockfile-only `
 - Staging sets `SITE_NOINDEX=1` (T3-U8). Unset is equally closed, because only `"0"` opens indexing.
 - The CI build prints a `metadataBase` warning. That is expected, because the CI build is never deployed.
 - Before the index flip (WEB-U04), view the source of `/` and check that `og:image` is on `https://<domain>`.
+
+## WEB-S05: security headers and CSP
+
+- **What ships.** `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` and `X-Frame-Options: DENY` go on every route. The static CSP (`next.config.ts`) covers marketing, legal, the 404 and the metadata routes. The per-request nonce CSP (`src/proxy.ts`) covers `/app*`, `/account*`, `/login` and `/admin*`, with Maps origins on `/app` only and Firebase origins on `/login` only. `/login` also gets COOP `same-origin-allow-popups`.
+- **`CSP_ENFORCE` is read at build time** (inlined into both `next.config.ts` and the proxy). Without `CSP_ENFORCE=1` the site sends `Content-Security-Policy-Report-Only`. Flipping it needs a rebuild.
+- **Hard gate: do not set `CSP_ENFORCE=1` until `/app`, `/admin/*`, `/login` and `/account` render dynamically**, for example via `await connection()` in their layouts (expected with T0-01, WEB-B07 and WEB-B19). Today `/app` and `/admin/*` are prerendered, so their scripts carry no nonce and enforcing would block them.
+- **Before enforcing on production:**
+  - Check `/app` on staging in report-only with a real Maps key and confirm there are no `securitypolicyviolation` events.
+  - WEB-B06 confirms the Firebase origin list against a real login.
+- **No report endpoint in V1**, per ADR-0016.
