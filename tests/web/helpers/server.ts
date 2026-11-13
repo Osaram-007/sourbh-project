@@ -103,6 +103,8 @@ async function freePort(): Promise<number> {
 /** Per-file build settings on top of testEnv(). Only these keys; SITE_NOINDEX still comes from process.env via testEnv(). */
 export interface ExtraEnv {
   APP_ORIGIN?: string;
+  /** Build-time CSP switch (ADR-0016): "1" makes both CSP halves enforcing. */
+  CSP_ENFORCE?: "1";
 }
 let builtWith: string | undefined; // the extraEnv of the call that triggered the build
 let built: Promise<void> | undefined; // once per test process; one process per *.e2e.ts file
@@ -132,7 +134,9 @@ export async function startServer(extraEnv: ExtraEnv = {}): Promise<TestServer> 
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   // Only the named keys are copied, so a caller cannot smuggle in a whole process.env.
-  const picked: ExtraEnv = extraEnv.APP_ORIGIN === undefined ? {} : { APP_ORIGIN: extraEnv.APP_ORIGIN };
+  const picked: ExtraEnv = {};
+  if (extraEnv.APP_ORIGIN !== undefined) picked.APP_ORIGIN = extraEnv.APP_ORIGIN;
+  if (extraEnv.CSP_ENFORCE === "1") picked.CSP_ENFORCE = "1";
   const key = JSON.stringify(picked);
   builtWith ??= key;
   if (builtWith !== key) throw new Error(`startServer(${key}) called after this process built with ${builtWith}; one build per process, so use a separate *.e2e.ts file`);
