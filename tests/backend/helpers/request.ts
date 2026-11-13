@@ -1,11 +1,12 @@
 /**
  * T1-03: a small NextRequest builder. Defaults pass the T1-02 CSRF check (Sec-Fetch-Site: same-origin
- * and Origin = TEST_APP_ORIGIN). Importing this sets APP_ORIGIN to TEST_APP_ORIGIN if it is unset.
+ * and Origin = TEST_APP_ORIGIN). Importing this sets APP_ORIGIN to TEST_APP_ORIGIN unconditionally
+ * (each test file runs in its own process, so it cannot leak).
  */
 import { NextRequest } from "next/server";
 
 export const TEST_APP_ORIGIN = "https://app.example.com";
-process.env.APP_ORIGIN ??= TEST_APP_ORIGIN;
+process.env.APP_ORIGIN = TEST_APP_ORIGIN;
 
 export interface RequestOpts {
   method?: string;

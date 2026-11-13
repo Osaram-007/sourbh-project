@@ -6,6 +6,9 @@
  * startJwks() sets the env vars the verifier reads. Names come from ADR-0003: FIREBASE_JWKS_URL
  * (override of Google's JWKS URL) and FIREBASE_PROJECT_ID (issuer https://securetoken.google.com/<id>,
  * audience <id>).
+ *
+ * The verifier must read those two env vars lazily, at first use, not at module import. Call
+ * before(startJwks) / after(stopJwks) once per file at file scope: a stop/start picks a new port.
  */
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -59,7 +62,6 @@ export const getJwksUrl = () => {
 };
 
 export interface MintOpts {
-  projectId?: string; // default TEST_PROJECT_ID; sets both iss and aud
   issuer?: string;
   audience?: string;
   kid?: string; // default TEST_KID
@@ -74,9 +76,12 @@ export interface MintOpts {
  */
 export async function mintIdToken(claims: JWTPayload & Record<string, unknown> = {}, o: MintOpts = {}): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const pid = o.projectId ?? TEST_PROJECT_ID;
   const sub = claims.sub ?? "test-uid-1";
   const payload: Record<string, unknown> = {
+    iss: o.issuer ?? issuerFor(TEST_PROJECT_ID),
+    aud: o.audience ?? TEST_PROJECT_ID,
+    iat: now,
+    exp: now + (o.expiresInSec ?? 3600),
     sub,
     user_id: sub,
     auth_time: now,
@@ -87,15 +92,14 @@ export async function mintIdToken(claims: JWTPayload & Record<string, unknown> =
   const k = await getKeys();
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "RS256", kid: o.kid ?? TEST_KID, typ: "JWT" })
-    .setIssuer(o.issuer ?? issuerFor(pid))
-    .setAudience(o.audience ?? pid)
-    .setIssuedAt(now)
-    .setExpirationTime(now + (o.expiresInSec ?? 3600))
     .sign((o.signWith === "other" ? k.other : k.main).privateKey);
 }
 
 /** Negative variants. Each is otherwise valid. */
-export const mintExpired = (c: JWTPayload = {}) => mintIdToken(c, { expiresInSec: -60 });
+export const mintExpired = (c: JWTPayload = {}) => {
+  const now = Math.floor(Date.now() / 1000); // exp an hour ago, iat before exp: expired under any sane clockTolerance
+  return mintIdToken({ iat: now - 7200, auth_time: now - 7200, ...c }, { expiresInSec: -3600 });
+};
 export const mintWrongAudience = (c: JWTPayload = {}) => mintIdToken(c, { audience: "some-other-project" });
 export const mintWrongIssuer = (c: JWTPayload = {}) => mintIdToken(c, { issuer: issuerFor("some-other-project") });
 export const mintUnknownKid = (c: JWTPayload = {}) => mintIdToken(c, { kid: "no-such-kid" });

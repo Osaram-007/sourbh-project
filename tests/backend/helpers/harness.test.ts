@@ -2,7 +2,7 @@
  * T1-03 self-tests for the backend harness. Always runs, except the DB round trip, which is
  * skipped without TEST_DATABASE_URL.
  */
-import { assertTestDatabaseUrl, closeTestDb, dbSkip, resetDb, setupTestDb, testPool } from "./db";
+import { assertTestDatabaseUrl, closeTestDb, dbSkip, perProcessDb, resetDb, setupTestDb, testDbName, testPool } from "./db";
 import { makeRequest, routeCtx, TEST_APP_ORIGIN } from "./request";
 import {
   JWKS_ENV,
@@ -20,6 +20,7 @@ import {
   startJwks,
   stopJwks,
 } from "./firebase";
+import { execFileSync } from "node:child_process";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { NextResponse } from "next/server";
@@ -62,6 +63,13 @@ describe("firebase JWKS + minting", () => {
     const { payload } = await verify(await mintIdToken({ auth_time: 123, user_id: undefined }));
     assert.equal(payload.auth_time, 123);
     assert.ok(!("user_id" in payload));
+  });
+
+  it("iss/aud/exp defaults are overridable too", async () => {
+    const t = await mintIdToken({ iss: "x", aud: "y", exp: Math.floor(Date.now() / 1000) + 60, iat: undefined });
+    const { payload } = await jwtVerify(t, createRemoteJWKSet(new URL(getJwksUrl())), { issuer: "x", audience: "y" });
+    assert.ok(!("iat" in payload));
+    assert.ok(payload.exp! < Math.floor(Date.now() / 1000) + 100);
   });
 
   const bad: Array<[string, () => Promise<string> | string, new (...a: never[]) => Error, string?]> = [
@@ -109,6 +117,14 @@ describe("request builder", () => {
     assert.equal((await ok(makeRequest({ ...h, headers: { origin: "https://evil.example" } }), routeCtx())).status, 403);
   });
 
+  it("importing request.ts overrides an inherited APP_ORIGIN", () => {
+    const out = execFileSync(process.execPath, ["--import", "tsx", "-e", "import(\"./tests/backend/helpers/request.ts\").then(() => console.log(process.env.APP_ORIGIN))"], {
+      env: { ...process.env, APP_ORIGIN: "https://inherited.example" },
+      encoding: "utf8",
+    });
+    assert.equal(out.trim(), TEST_APP_ORIGIN);
+  });
+
   it("builds query, cookies, headers and X-Forwarded-For", () => {
     const r = makeRequest({ path: "/api/v1/s?limit=5", cookies: { a: "b c" }, headers: { "X-Test": "1" }, ip: "1.2.3.4" });
     assert.equal(r.nextUrl.searchParams.get("limit"), "5");
@@ -121,15 +137,34 @@ describe("request builder", () => {
 });
 
 describe("db guard", () => {
-  it("throws when the database name lacks 'test', or the URL is junk or unset", () => {
-    assert.throws(() => assertTestDatabaseUrl("postgresql://u:p@127.0.0.1:5432/fullcharge"), /must contain "test"/);
-    assert.throws(() => assertTestDatabaseUrl("postgresql://u:p@127.0.0.1:5432/prod?x=test"), /must contain "test"/);
+  const url = (name: string) => `postgresql://u:p@127.0.0.1:5432/${name}`;
+  it("throws when the database name lacks a test token, or the URL is junk or unset", () => {
+    assert.throws(() => assertTestDatabaseUrl(url("fullcharge")), /"test" token/);
+    assert.throws(() => assertTestDatabaseUrl(url("prod?x=test")), /"test" token/);
+    assert.throws(() => assertTestDatabaseUrl(url("fullcharge_latest")), /"test" token/);
+    assert.throws(() => assertTestDatabaseUrl(url("contest")), /"test" token/);
+    assert.throws(() => assertTestDatabaseUrl("postgresql://test:test@test-host:5432/prod"), /"test" token/);
     assert.throws(() => assertTestDatabaseUrl("not a url"), /not a valid URL/);
     assert.throws(() => assertTestDatabaseUrl(undefined), /not set/);
   });
-  it("accepts a name containing 'test'", () => {
-    const u = "postgresql://u:p@127.0.0.1:5433/fullcharge_test";
-    assert.equal(assertTestDatabaseUrl(u), u);
+  it("accepts names with a test token", () => {
+    for (const n of ["fullcharge_test", "test", "fc-test-db", "fullcharge_test_1234"]) {
+      assert.equal(assertTestDatabaseUrl(url(n)), url(n));
+    }
+  });
+  it("rejects a schema query parameter", () => {
+    assert.throws(() => assertTestDatabaseUrl(url("fullcharge_test?schema=other")), /schema/);
+  });
+  it("derives <base>_<pid>, keeping host and credentials, and never the base name", () => {
+    const d = perProcessDb(url("fullcharge_test?sslmode=disable"), 4242);
+    assert.equal(d.name, "fullcharge_test_4242");
+    assert.equal(d.url, "postgresql://u:p@127.0.0.1:5432/fullcharge_test_4242?sslmode=disable");
+    assert.notEqual(perProcessDb(url("test"), 1).name, "test");
+    assert.throws(() => perProcessDb(url("fullcharge"), 1), /"test" token/);
+  });
+  it("pins DATABASE_URL: to the per-process DB, or to a closed port when TEST_DATABASE_URL is unset", () => {
+    if (testDbName) assert.ok(process.env.DATABASE_URL!.endsWith(`/${testDbName}`));
+    else assert.equal(process.env.DATABASE_URL, "postgresql://x:x@127.0.0.1:1/x_test");
   });
 });
 
@@ -140,6 +175,9 @@ describe("db round trip", { skip: dbSkip, timeout: 120_000 }, () => {
   it("migrate, insert, reset, then empty (and _prisma_migrations survives)", async () => {
     await resetDb();
     const p = testPool();
+    // the per-process DB, not the shared base DB; setupTestDb also checked the app client (@/lib/db) is on it
+    assert.equal((await p.query("SELECT current_database() AS d")).rows[0].d, testDbName);
+    assert.notEqual(testDbName, process.env.TEST_DATABASE_URL!.split("/").pop()!.split("?")[0]);
     await p.query(`INSERT INTO "User" (id, email) VALUES ('u1', 'a@example.com')`);
     assert.equal((await p.query(`SELECT 1 FROM "User"`)).rowCount, 1);
     await resetDb();
