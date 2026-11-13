@@ -73,8 +73,9 @@ const ROUTE_FILES: Record<string, string[]> = {
   "stations/search": ["GET"],
   sync: ["POST"], // machine route, x-sync-secret only: syncSecret.test.ts
   "auth/[...nextauth]": ["GET", "POST"], // NextAuth's own handlers
+  "v1/health": ["GET"], // public (auth none) v1 route, no CASES row: v1/health.test.ts covers it
 };
-const NOT_IN_CASES = new Set(["sync", "auth/[...nextauth]"]);
+const NOT_IN_CASES = new Set(["sync", "auth/[...nextauth]", "v1/health"]);
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 type Handler = (req?: NextRequest, ctx?: { params: Promise<{ id: string }> }) => Promise<Response>;
