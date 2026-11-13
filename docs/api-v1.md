@@ -499,7 +499,7 @@ interface VehicleModelSummary {      // Provisional shape
 
 - **`GET /me/vehicles`**: `{ items: Vehicle[], total, nextCursor, hasMore }`.
 - **`POST /me/vehicles`**: body `{ vehicleModelId?: string, connectorTypes?: ConnectorType[], nickname?: string }`. Exactly one of `vehicleModelId` or a non-empty `connectorTypes` is required. The model must be active. `connectorTypes` must not contain `UNKNOWN`. Returns 201 with the `Vehicle`. A user may have at most 10 vehicles; the 11th returns 409 `conflict`.
-- **`PATCH /me/vehicles/{id}`**: any subset of `vehicleModelId`, `connectorTypes` and `nickname`; each accepts `null` (`connectorTypes`: an array or `null`). Setting a model clears `connectorTypes`; setting `connectorTypes` clears the model. The vehicle must end with exactly one of the two, otherwise 400 `validation_failed`. Returns the `Vehicle`.
+- **`PATCH /me/vehicles/{id}`**: any subset of `vehicleModelId`, `connectorTypes` and `nickname`; each accepts `null` (`connectorTypes`: an array or `null`). Setting a model clears `connectorTypes`; setting `connectorTypes` clears the model. The vehicle must end with exactly one of the two, otherwise 422 `validation_failed`. Sending a non-null `vehicleModelId` and a non-null `connectorTypes` in the same PATCH also returns 422. Returns the `Vehicle`.
 - **`DELETE /me/vehicles/{id}`**: 204. The last vehicle may be deleted.
 
 A user can reach only their own vehicles; another user's id returns 404. No registration number is stored.
