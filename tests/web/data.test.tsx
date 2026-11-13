@@ -428,14 +428,16 @@ describe("time output is identical whatever the machine's TZ", () => {
     assert.equal(text(render(<OfflineBanner lastUpdated="2020-01-01T00:00:00Z" onRetry={() => {}} offline />)).slice(0, BANNER.length), BANNER);
   });
 
+  // CommonJS child with require(): the same path as this file's own imports (package.json has no "type", so tsx
+  // compiles them to require). An ESM import() of a .ts file goes through CJS interop, and its named exports are
+  // missing under tsx's async hooks (Node < 24.11.1, e.g. Node 22 in CI): "formatIst is not a function".
   const CHILD = `
-    import { pathToFileURL } from "node:url";
-    const load = (f) => import(pathToFileURL(process.env.DATA_DIR + "/" + f).href);
-    const { formatIst, freshnessLabel, toDate } = await load("time.ts");
-    const { FreshnessText } = await load("FreshnessText.tsx");
-    const { OfflineBanner } = await load("OfflineBanner.tsx");
-    const { createElement: h } = await import("react");
-    const { renderToStaticMarkup: render } = await import("react-dom/server");
+    const load = (f) => require(process.env.DATA_DIR + "/" + f);
+    const { formatIst, freshnessLabel, toDate } = load("time.ts");
+    const { FreshnessText } = load("FreshnessText.tsx");
+    const { OfflineBanner } = load("OfflineBanner.tsx");
+    const { createElement: h } = require("react");
+    const { renderToStaticMarkup: render } = require("react-dom/server");
     const rows = JSON.parse(process.env.ROWS);
     console.log("RESULT " + JSON.stringify({
       offsets: [new Date(2026, 0, 1).getTimezoneOffset(), new Date(2026, 6, 1).getTimezoneOffset()],
@@ -457,7 +459,7 @@ describe("time output is identical whatever the machine's TZ", () => {
     it(`TZ=${tz}`, () => {
       const env: NodeJS.ProcessEnv = { ...process.env, TZ: tz, DATA_DIR, ROWS: JSON.stringify(ROWS) };
       delete env.NODE_TEST_CONTEXT; // otherwise the child thinks it is a node:test worker
-      const run = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", CHILD], { cwd: process.cwd(), env, encoding: "utf8", timeout: 90_000 });
+      const run = spawnSync(process.execPath, ["--import", "tsx", "--input-type=commonjs", "-e", CHILD], { cwd: process.cwd(), env, encoding: "utf8", timeout: 90_000 });
       assert.equal(run.status, 0, `child failed: ${run.stderr || run.error}`);
       const line = run.stdout.split("\n").find((l) => l.startsWith("RESULT "));
       assert.ok(line, `no RESULT line in: ${run.stdout}`);
