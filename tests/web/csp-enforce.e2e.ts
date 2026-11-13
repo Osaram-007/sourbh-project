@@ -47,6 +47,29 @@ describe("CSP_ENFORCE=1: both halves enforce", () => {
   });
 });
 
+describe("positive control: enforcement really blocks", () => {
+  test("/: an injected foreign script is reported as script-src-elem, disposition enforce", T, async () => {
+    const { page, captured, flush, close } = await openPage(browser, "desktop");
+    try {
+      await page.goto(server.baseUrl + "/", { waitUntil: "load" });
+      await page.evaluate(() => {
+        const s = document.createElement("script");
+        s.src = "https://example.invalid/x.js";
+        document.head.appendChild(s);
+      });
+      for (let i = 0; i < 20 && !captured.cspViolations.length; i++) {
+        await page.waitForTimeout(100);
+        await flush();
+      }
+      const v = captured.cspViolations.filter((x) => x.directive === "script-src-elem");
+      assert.ok(v.length >= 1, JSON.stringify(captured.cspViolations));
+      assert.equal(v[0].disposition, "enforce");
+    } finally {
+      await close();
+    }
+  });
+});
+
 describe("the CSP_ENFORCE=1 gate (ADR-0016, DEPLOY.md WEB-S05)", () => {
   // Enforcing is only safe once every nonce surface renders per request. A prerendered page has no nonce on its
   // scripts, so the browser would block them. Owners: T0-01 (remove next-auth, dynamic layouts), WEB-B07, WEB-B19.
