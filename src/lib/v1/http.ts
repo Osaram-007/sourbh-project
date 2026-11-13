@@ -118,7 +118,7 @@ export function route<A extends AuthMode, P = Record<string, never>>(
         const u = limit(`user:${user.id}`, num("RATE_LIMIT_USER_PER_MIN", 120), 60_000);
         if (!u.ok) return retry(u);
         if (mutating) {
-          const w = limit(`userw:${user.id}`, num("RATE_LIMIT_USER_WRITE_PER_MIN", 20), 60_000);
+          const w = limit(`userw:${user.id}`, num("RATE_LIMIT_USER_WRITES_PER_MIN", 20), 60_000);
           if (!w.ok) return retry(w);
         }
       }

@@ -10,6 +10,12 @@ const MAX_KEYS = 50_000;
 const SWEEP_EVERY_MS = 30_000;
 const windows = new Map<string, { count: number; resetAt: number }>();
 let lastSweep = 0;
+let clock = () => Date.now();
+/** ADR-0009: tests inject the clock. Pass nothing to restore the real one. */
+export function setClock(fn?: () => number) {
+  clock = fn ?? (() => Date.now());
+  lastSweep = 0;
+}
 
 function sweep(now: number) {
   lastSweep = now;
@@ -23,7 +29,7 @@ function sweep(now: number) {
 
 /** Count one hit against `key`; `max` hits are allowed per `windowMs`. */
 export function limit(key: string, max: number, windowMs: number): LimitResult {
-  const now = Date.now();
+  const now = clock();
   if (now - lastSweep >= SWEEP_EVERY_MS || windows.size > MAX_KEYS) sweep(now);
 
   let w = windows.get(key);
@@ -42,10 +48,11 @@ export function limit(key: string, max: number, windowMs: number): LimitResult {
 
 /**
  * Client IP. A Next route handler has no socket address, so it comes from X-Forwarded-For as set by
- * our own reverse proxy: the entry `TRUSTED_PROXY_HOPS` (default 1) places from the RIGHT, which is
+ * our own reverse proxy (Caddy, ADR-0009/0021; it replaces any client-sent XFF, so the header holds
+ * the one address it saw): the entry `TRUSTED_PROXY_HOPS` (default 1) places from the RIGHT, which is
  * the address that proxy actually saw. Anything a client prepends to the header sits to the left and
  * is ignored. If the header is missing or not an IP, everything shares the "unknown" bucket.
- * Set TRUSTED_PROXY_HOPS=2 behind two proxies (e.g. CDN + nginx).
+ * Set TRUSTED_PROXY_HOPS=2 behind two proxies (e.g. CDN + Caddy).
  */
 export function clientIp(req: Request): string {
   const hops = Math.max(1, Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "1", 10) || 1);
