@@ -139,3 +139,16 @@ processes the CSS during `npm run build` on the deploy VM, and a lockfile-only `
   - **`https://*.google.com`:** narrow it in `connect-src`, `img-src` and `frame-src` to the hosts the soak shows. The wildcard covers `script.google.com`.
   - **Fonts:** confirm the Roboto stylesheet and fonts load with no violations.
 - **No report endpoint in V1**, per ADR-0016.
+
+## T0-04: admin allowlist (`ADMIN_EMAILS`)
+
+Set `ADMIN_EMAILS` in `/opt/full-charge/.env` to the owner's email before this release goes out
+(comma-separated for several; matching is case-insensitive). Admin access needs the DB role
+`ADMIN` **and** the email on this list. The web service reads `.env` at start, so restart
+`full-charge-web` after changing it.
+
+**If `ADMIN_EMAILS` is missing or empty, nobody is admin: the owner is locked out of `/admin`.**
+`/api/admin/*` and `/api/analytics/*` all return 403, so the admin pages load but show no data
+and the sync and credentials controls fail. `/api/sync` is unaffected, it uses `SYNC_SECRET_KEY`.
+
+Failure details are not sent to the admin panel or to API callers (`/api/admin/*`, `/api/sync`); read them in the service logs. Scheduled scrapes log to `full-charge-sync` (`journalctl -u full-charge-sync`), manual ones (Trigger Sync in `/admin`, `POST /api/sync`) to `full-charge-web`.

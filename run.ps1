@@ -12,24 +12,17 @@ if (-not (Test-Path ".env")) {
     Exit 1
 }
 
-# 2. Database Sync & Migrations
-Write-Host "`n[1/3] Pushing database schema via Prisma..." -ForegroundColor Cyan
-npx prisma db push
+# 2. Database Migrations
+Write-Host "`n[1/2] Applying database migrations via Prisma..." -ForegroundColor Cyan
+npx prisma migrate deploy
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[Error] Failed to push database schema. Please verify DATABASE_URL in your .env file." -ForegroundColor Red
+    Write-Host "[Error] Failed to apply database migrations. Please verify DATABASE_URL in your .env file." -ForegroundColor Red
+    Write-Host "If this database was created earlier by 'prisma db push', run 'npx prisma migrate reset' (destroys local data), or 'npx prisma migrate resolve --applied 0_init' if its schema already matches." -ForegroundColor Yellow
     Exit 1
 }
 
-# 3. PostGIS & Spatial Trigger Setup
-Write-Host "`n[2/3] Initializing PostGIS extensions & spatial triggers..." -ForegroundColor Cyan
-npx tsx scripts/db-init.ts
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[Error] Failed to initialize PostGIS spatial settings." -ForegroundColor Red
-    Exit 1
-}
-
-# 4. Starting Web Server
-Write-Host "`n[3/3] Launching Next.js development server..." -ForegroundColor Cyan
+# 3. Starting Web Server
+Write-Host "`n[2/2] Launching Next.js development server..." -ForegroundColor Cyan
 Write-Host "Local URL: http://localhost:3000" -ForegroundColor Green
 Write-Host "Admin Controls: http://localhost:3000/admin/sessions`n" -ForegroundColor Green
 

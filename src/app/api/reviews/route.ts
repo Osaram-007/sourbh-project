@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { requireUser } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 
 // GET: Fetch reviews for a station
@@ -39,9 +38,10 @@ export async function GET(req: NextRequest) {
       averageRating: Math.round(averageRating * 10) / 10,
       totalRatings,
     });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Reviews API error fetching reviews:", error);
     return NextResponse.json(
-      { error: "Failed to fetch reviews", message: error.message },
+      { error: "Failed to fetch reviews" },
       { status: 500 }
     );
   }
@@ -50,10 +50,8 @@ export async function GET(req: NextRequest) {
 // POST: Submit a review
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireUser();
+    if (!auth.ok) return auth.response;
 
     const body = await req.json();
     const { stationId, rating, comment } = body;
@@ -67,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     const review = await db.review.create({
       data: {
-        userId: session.user.id,
+        userId: auth.user.id,
         stationId,
         rating: Math.round(rating),
         comment: comment || null,
@@ -80,9 +78,10 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, review });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Reviews API error submitting review:", error);
     return NextResponse.json(
-      { error: "Failed to submit review", message: error.message },
+      { error: "Failed to submit review" },
       { status: 500 }
     );
   }

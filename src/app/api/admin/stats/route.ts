@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || (session.user as any)?.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+    const auth = await requireAdmin();
+    if (!auth.ok) return auth.response;
 
     // Total stations
     const totalStations = await db.station.count();
@@ -60,9 +57,10 @@ export async function GET() {
         count: s._count.id,
       })),
     });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Admin stats API error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch stats", message: error.message },
+      { error: "Failed to fetch stats" },
       { status: 500 }
     );
   }
