@@ -40,6 +40,8 @@ import { NextRequest } from "next/server";
 delete process.env.REDIS_URL;
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
+// Every row shares the ip:unknown bucket and the IP limit runs before auth; keep 429s out of guard rows.
+process.env.RATE_LIMIT_IP_PER_MIN = "1000000";
 
 const connects = { count: 0 };
 let fetchSpy: ReturnType<typeof mock.method>;

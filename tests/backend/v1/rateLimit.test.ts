@@ -97,16 +97,16 @@ describe("limit(): Retry-After seconds", () => {
 describe("limit(): memory bound (ADR-0009 'expired windows are swept')", () => {
   it("a sweep (every 30 s) evicts expired keys, so they do not count against the cap", () => {
     const tag = key();
+    now += 1_000 * 3_600_000; // past every window earlier tests left; the first call sweeps them
     // 30,000 long-lived keys, then 15,000 that expire after 1 s: 45,000, under the 50,000 cap.
     for (let i = 0; i < 30_000; i++) limit(`${tag}-live-${i}`, 1, 3_600_000);
     for (let i = 0; i < 15_000; i++) limit(`${tag}-short-${i}`, 1, 1_000);
     now += 31_000;
-    // 15,000 new keys: 60,000 in total unless the expired 15,000 were swept. (Not 20,000: windows
-    // left by earlier tests are still live here, and exactly 50,000 would leave them no room.)
-    for (let i = 0; i < 15_000; i++) limit(`${tag}-new-${i}`, 1, 3_600_000);
+    // 20,000 new keys: 65,000 in total unless the expired 15,000 were swept.
+    for (let i = 0; i < 20_000; i++) limit(`${tag}-new-${i}`, 1, 3_600_000);
     // If the sweep ran, nothing live was dropped; the oldest live key is still counted.
     assert.equal(limit(`${tag}-live-0`, 1, 3_600_000).ok, false, "a live key was evicted: the expired ones were not swept");
-    assert.equal(limit(`${tag}-new-14999`, 1, 3_600_000).ok, false);
+    assert.equal(limit(`${tag}-new-19999`, 1, 3_600_000).ok, false);
   });
 
   it("the 50,000-key cap holds: a flood of distinct keys drops the oldest, keeps the newest", () => {

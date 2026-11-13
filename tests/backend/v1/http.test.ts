@@ -487,11 +487,18 @@ describe("fail()", () => {
   });
   it("every code in api-v1 1.3 has a fixed message", async () => {
     const doc = fs.readFileSync(path.resolve(__dirname, "../../../docs/api-v1.md"), "utf8");
-    const table = doc.slice(doc.indexOf("### 1.3"), doc.indexOf("### 1.4"));
-    const rows = [...table.matchAll(/^\| (.+?) \| \d{3} \|/gm)].map((m) => m[1]);
+    const start = doc.search(/^### [\d.]+ Errors\b/m);
+    const table = doc.slice(start, doc.indexOf("\n### ", start + 1));
+    const rows = [...table.matchAll(/^\|([^|]*)\|\s*\d{3}\s*\|/gm)].map((m) => m[1]);
     const codes = [...new Set(rows.flatMap((r) => [...r.matchAll(/`(\w+)`/g)].map((m) => m[1])))];
-    assert.equal(codes.length, 17, `parsed ${codes.join(", ")}`);
-    for (const code of codes) await assertError(fail(400, code as Parameters<typeof fail>[1]), 400, code);
+    assert.ok(codes.length >= 17, `parsed ${codes.length}: ${codes.join(", ")}`);
+    for (const code of codes) {
+      const res = fail(400, code as Parameters<typeof fail>[1]);
+      const body = await res.clone().json();
+      assert.equal(body.error.code, code, `code ${code}`);
+      assert.ok(body.error.message.length > 0, `code ${code} has no message`);
+      await assertError(res, 400, code);
+    }
   });
   it("an invented code does not compile (checked by tsc --noEmit, which includes this file)", () => {
     // @ts-expect-error made_up_code is not in api-v1 1.3
@@ -631,7 +638,7 @@ describe("rate limiting (api-v1 1.7, ADR-0009)", () => {
   });
 
   it("the limit comes from RATE_LIMIT_IP_PER_MIN; an unusable value falls back to the default 120", async () => {
-    for (const v of ["not-a-number", "0", "-5", "Infinity"]) {
+    for (const v of ["not-a-number", "0", "-5", "Infinity", "0.5"]) {
       setEnv("RATE_LIMIT_IP_PER_MIN", v);
       const ip = nextIp();
       for (let i = 0; i < 120; i++) assert.equal((await none(rq("GET", { ip }), ctx())).status, 200, `${v}: request ${i + 1}`);

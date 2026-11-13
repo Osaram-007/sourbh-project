@@ -18,7 +18,7 @@ const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /** Every error code in docs/api-v1.md 1.3, each with its fixed, user-safe message. */
 const MESSAGES = {
   validation_failed: "The request is not valid.",
-  invalid_cursor: "The cursor is not valid for this request.",
+  invalid_cursor: "This page of results is no longer valid. Start again from the first page.",
   not_available: "This option is not available yet.",
   auth_missing: "Sign in required.",
   auth_invalid: "Your session is not valid. Sign in again.",
@@ -28,11 +28,11 @@ const MESSAGES = {
   forbidden: "Not allowed.",
   not_found: "Not found.",
   station_gone: "This station no longer exists.",
-  conflict: "The request conflicts with the current state.",
-  account_conflict: "This sign-in belongs to another account.",
+  conflict: "This can't be done because of what is already saved.",
+  account_conflict: "This sign-in can't be linked to the existing account.",
   payload_too_large: "Request body is too large.",
   unsupported_media_type: "Content-Type must be application/json.",
-  rate_limited: "Too many requests.",
+  rate_limited: "Too many requests. Try again shortly.",
   internal: "Something went wrong.",
 };
 
@@ -99,10 +99,10 @@ async function readCapped(req: NextRequest): Promise<Uint8Array | null> {
   return Buffer.concat(chunks);
 }
 
-/** A positive, finite limit from env; anything else (unset, junk, 0, negative, Infinity) uses `dflt`. */
+/** A positive whole-number limit from env; anything else (unset, junk, 0, negative, fractional, Infinity) uses `dflt`. */
 const num = (name: string, dflt: number) => {
   const n = Number(process.env[name]);
-  return Number.isFinite(n) && n > 0 ? n : dflt;
+  return Number.isInteger(n) && n > 0 ? n : dflt;
 };
 
 export type RouteCtx<A extends AuthMode, P> = {
