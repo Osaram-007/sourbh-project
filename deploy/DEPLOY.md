@@ -194,10 +194,11 @@ Failure details are not sent to the admin panel or to API callers (`/api/admin/*
 
 ## T3-04: CI tests before deploy
 
-- The `deploy` job runs only on `main` (`if: github.ref == 'refs/heads/main'`). A `workflow_dispatch` run on any other ref builds and tests, and never deploys.
+- The `deploy` job runs only on `main` (`if: github.ref == 'refs/heads/main'`). A `workflow_dispatch` run on any other ref builds and tests, and never deploys (on refs that contain T3-04; see the warning below).
 - Pushes that change only `mobile/**` or `docs/**` do not trigger the workflow, so they do not deploy, except `docs/api-v1.md` and `docs/asset-register.md`: tests read them, so a change to either triggers a full run, including a redeploy. `workflow_dispatch` is unaffected.
 - The `build` job runs `npm test` against a Postgres 16 service container (throwaway CI credentials) before `npm run build`. A failing test fails `build`, which blocks `deploy`.
 - Dry-run CI on a branch: `gh workflow run deploy.yml --ref <branch>`. This builds and tests only, and only if the branch contains T3-04 (its `deploy.yml` has `if: github.ref == 'refs/heads/main'`). A dispatched run uses the workflow file from the dispatched ref.
-- **Warning: never dispatch on an older branch.** Any branch cut before T3-04 merges has no `if:` gate, so dispatching it deploys that branch to production. That includes `web/design` until T3-04 merges, and the old `task/*` branches.
-- Runs are serialised per ref: main uses one group (`production-deploy`, never cancelled); other refs get their own group, so a branch dry-run cannot cancel a pending main deploy. Both jobs time out at 30 minutes.
+- **Warning: never dispatch on an older branch.** Any branch cut before T3-04 merges has no `if:` gate, so dispatching it deploys that branch to production. That includes `web/design` until T3-04 merges, and the old `task/*` branches. Never create case variants of `main` (e.g. `Main`): GitHub compares refs case-insensitively in expressions, so such a branch would deploy.
+- Runs are serialised per ref: main uses one group (`production-deploy`; an in-progress main run is never cancelled; a newer main push replaces one that is still pending); other refs get their own group, so a branch dry-run cannot cancel a pending main deploy. Both jobs time out at 30 minutes. If a deploy routinely takes over 10 minutes, raise the deploy timeout to at least 3x the longest run.
+- If `Deploy to VM` fails, times out or is cancelled after the rsync step, production is serving from a partly rebuilt `.next`/`node_modules`. Recover by re-running the failed job or pushing a fix. Do not restart the services by hand before a build succeeds.
 - First CI run: check the log has no "TEST_DATABASE_URL is not set" skip, and that the harness "db round trip" test passed. That run is the first real check of the T1-03 DB paths and T0-04's 6 DB tests.

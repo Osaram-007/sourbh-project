@@ -14,7 +14,8 @@ on:
 permissions:
   contents: read
 
-# Main shares one group (serialised, never cancelled); other refs get their own so a
+# Main shares one group (serialised; an in-progress main run is never cancelled; a newer
+# main push replaces one that is still pending); other refs get their own so a
 # branch dry-run can never cancel a pending main deploy.
 concurrency:
   group: ${{ github.ref == 'refs/heads/main' && 'production-deploy' || format('ci-{0}', github.ref) }}
