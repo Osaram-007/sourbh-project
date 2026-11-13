@@ -58,6 +58,27 @@ describe("Caddyfile owner-only paths on production (T3-01)", () => {
   });
 });
 
+describe("Caddyfile encoded-slash rejection on production (T3-01)", () => {
+  it("rule matches %2f and %5c case-insensitively in the path part of the escaped URI", () => {
+    const m = prod.match(/^\s*@encoded_slash\s+`(.+)`\s*$/m);
+    assert.ok(m, "@encoded_slash matcher present");
+    assert.match(m[1], /\{http\.request\.uri\}\.matches\(/);
+    assert.match(m[1], /\(\?i\)/);
+    assert.match(m[1], /\[\^\?\]\*/);
+    assert.match(m[1], /2f/);
+  });
+  it("responds 400 via handle @encoded_slash", () => {
+    assert.match(block(prod, "handle\\s+@encoded_slash") ?? "", /^\s*respond\s+400\s*$/m);
+  });
+  it("comes before the owner-only handling", () => {
+    const a = prod.search(/^\s*@encoded_slash\s/m);
+    const h = prod.search(/^\s*handle\s+@encoded_slash\b/m);
+    assert.ok(a >= 0 && h >= 0);
+    assert.ok(h < prod.search(/^\s*@owner_only\s/m));
+    assert.ok(h < prod.search(/^\s*handle\s+@owner_only\b/m));
+  });
+});
+
 describe("Caddyfile no literals, no trusted_proxies (T3-01)", () => {
   it("site addresses come only from env placeholders", () => {
     const heads = [...src.matchAll(/^(\S.*?)\s*\{\s*$/gm)].map((m) => m[1]).filter((h) => !h.startsWith("("));
@@ -104,10 +125,24 @@ describe("Caddyfile HSTS (T3-01)", () => {
 
 describe("Caddyfile log redaction (T3-01)", () => {
   const fields = block(prod, "fields") ?? "";
-  it("deletes lat, lng, bbox, q query params", () => {
-    const q = block(fields, "request>uri query") ?? "";
-    const del = [...q.matchAll(/^\s*delete\s+(\S+)\s*$/gm)].map((m) => m[1]);
-    for (const p of ["lat", "lng", "bbox", "q"]) assert.ok(del.includes(p), `delete ${p}`);
+  const params = ["lat", "lng", "bbox", "q", "north", "south", "east", "west"];
+  const deleted = (f: string) => {
+    const q = block(f, "request>uri query") ?? "";
+    return [...q.matchAll(/^\s*delete\s+(\S+)\s*$/gm)].map((m) => m[1]);
+  };
+  it("deletes location and search query params from the access log", () => {
+    for (const p of params) assert.ok(deleted(fields).includes(p), `delete ${p}`);
+  });
+  it("default logger (5xx entries) filters request>uri the same way", () => {
+    const g = block(src, "") ?? ""; // global options block: a bare `{`
+    const dl = block(g, "log") ?? "";
+    assert.match(dl, /^\s*wrap\s+json\s*$/m);
+    for (const p of params) assert.ok(deleted(dl).includes(p), `default log delete ${p}`);
+  });
+  it("rolls daily and keeps 14 files / 336h", () => {
+    assert.match(prod, /^\s*roll_interval\s+24h\s*$/m);
+    assert.match(prod, /^\s*roll_keep\s+14\s*$/m);
+    assert.match(prod, /^\s*roll_keep_for\s+336h\s*$/m);
   });
   it("deletes Cookie and Authorization request headers", () => {
     assert.match(fields, /^\s*request>headers>Cookie\s+delete\s*$/m);
