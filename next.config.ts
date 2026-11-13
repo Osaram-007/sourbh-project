@@ -20,9 +20,9 @@ const staticCsp = [
   "object-src 'none'",
 ].join("; ");
 
-// Everything except the proxy's surfaces (/app, /account, /login, /admin), API routes and _next assets.
-// A catch-all rather than a path list, so the 404, robots/sitemap/manifest and the icon routes are covered too.
-const staticSource = "/((?!app(?:/|$)|account(?:/|$)|login(?:/|$)|admin(?:/|$)|api/|_next/).*)";
+// The static policy is the floor on every page route (incl. 404, metadata routes, and case variants like /APP that the
+// case-sensitive proxy matcher misses). Where the proxy also runs, its header of the same name replaces this one.
+const staticSource = "/((?!api/|_next/).*)";
 
 const nextConfig: NextConfig = {
   env: { CSP_ENFORCE: process.env.CSP_ENFORCE === "1" ? "1" : "" },

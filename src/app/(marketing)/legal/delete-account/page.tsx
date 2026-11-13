@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Fact, linkClass } from "@/components/site/Fact";
 import { legal } from "@/content/legal";
 import { LegalDocument } from "../_components/LegalDocument";
@@ -19,9 +18,9 @@ export default function Page() {
         </h2>
         <p>
           Log in, then open your{" "}
-          <Link href="/account" prefetch={false} className={linkClass}>
+          <a href="/account" className={linkClass}>
             account page
-          </Link>{" "}
+          </a>{" "}
           and use the option to delete your account.
         </p>
         {/* Wording follows copy-deck section 12 (same-method notice, DN-13): signing in the other way opens a different account. */}
