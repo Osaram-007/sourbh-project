@@ -62,10 +62,7 @@ describe("Caddyfile encoded-slash rejection on production (T3-01)", () => {
   it("rule matches %2f and %5c case-insensitively in the path part of the escaped URI", () => {
     const m = prod.match(/^\s*@encoded_slash\s+`(.+)`\s*$/m);
     assert.ok(m, "@encoded_slash matcher present");
-    assert.match(m[1], /\{http\.request\.uri\}\.matches\(/);
-    assert.match(m[1], /\(\?i\)/);
-    assert.match(m[1], /\[\^\?\]\*/);
-    assert.match(m[1], /2f/);
+    assert.equal(m[1], '{http.request.uri}.matches("(?i)^[^?]*%(2f|5c)")');
   });
   it("responds 400 via handle @encoded_slash", () => {
     assert.match(block(prod, "handle\\s+@encoded_slash") ?? "", /^\s*respond\s+400\s*$/m);
