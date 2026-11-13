@@ -73,9 +73,9 @@ const ROUTE_FILES: Record<string, string[]> = {
   "stations/search": ["GET"],
   sync: ["POST"], // machine route, x-sync-secret only: syncSecret.test.ts
   "auth/[...nextauth]": ["GET", "POST"], // NextAuth's own handlers
-  "v1/health": ["GET"], // public (auth none) v1 route, no CASES row: v1/health.test.ts covers it
+  "v1/health": ["GET"],
 };
-const NOT_IN_CASES = new Set(["sync", "auth/[...nextauth]", "v1/health"]);
+const NOT_IN_CASES = new Set(["sync", "auth/[...nextauth]"]);
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 type Handler = (req?: NextRequest, ctx?: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -131,6 +131,11 @@ const CASES: Case[] = [
     call: () => routes["stations/search"].GET(req("/api/stations/search?q=ab")) },
   { file: "reviews", method: "GET", name: "GET /api/reviews?stationId=s1", guard: "public", db: true,
     call: () => routes.reviews.GET(req("/api/reviews?stationId=s1")) },
+  // The fake has no tagged-template $queryRaw, so here health answers 503 degraded. db: false although
+  // it runs SELECT 1: its database failure is the contract's 503 health body, not the generic 500 the
+  // "database throws" block asserts. v1/health.test.ts covers both outcomes.
+  { file: "v1/health", method: "GET", name: "GET /api/v1/health", guard: "public", db: false,
+    call: () => routes["v1/health"].GET(req("/api/v1/health")) },
 ];
 const adminCases = CASES.filter((c) => c.guard === "admin");
 const guardedCases = CASES.filter((c) => c.guard !== "public");

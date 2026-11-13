@@ -26,6 +26,9 @@ import {
 } from "../authTestKit";
 import { describe, it, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { inspect } from "node:util";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { fail, parseBody, parseQuery, route } from "@/lib/v1/http";
@@ -54,7 +57,8 @@ const rq = (method: string, o: Opts = {}) =>
     body: o.body ?? undefined,
     ...(o.body && typeof o.body === "object" && "getReader" in o.body ? { duplex: "half" } : {}),
   } as ConstructorParameters<typeof NextRequest>[1]);
-const ctx = (params: object = {}) => ({ params: Promise.resolve(params) });
+// Default P matches route()'s default, so a route whose handler ignores params type-checks too.
+const ctx = <P extends object = Record<string, never>>(params = {} as P) => ({ params: Promise.resolve(params) });
 
 const seen: Array<{ user: unknown; body: unknown; params: unknown }> = [];
 const handler = (c: { user: unknown; body: unknown; params: unknown }) => {
@@ -97,7 +101,7 @@ beforeEach(() => {
   seen.length = 0;
   setEnv("APP_ORIGIN", APP);
   setEnv("ADMIN_EMAILS", ADMIN.email);
-  for (const k of ["RATE_LIMIT_IP_PER_MIN", "RATE_LIMIT_USER_PER_MIN", "RATE_LIMIT_USER_WRITES_PER_MIN", "TRUSTED_PROXY_HOPS"]) setEnv(k, undefined);
+  for (const k of ["RATE_LIMIT_IP_PER_MIN", "RATE_LIMIT_USER_PER_MIN", "RATE_LIMIT_USER_WRITES_PER_MIN"]) setEnv(k, undefined);
 });
 
 describe("auth modes", () => {
@@ -265,7 +269,8 @@ describe("CSRF (api-v1 1.2): mutating methods", () => {
 
   describe("safe methods are never checked", () => {
     it("GET with cross-site, a bad Origin, or no headers at all", async () => {
-      for (const headers of [{ "sec-fetch-site": "cross-site" }, { origin: "https://evil.example" }, {}]) {
+      const variants: Record<string, string>[] = [{ "sec-fetch-site": "cross-site" }, { origin: "https://evil.example" }, {}];
+      for (const headers of variants) {
         assert.equal((await none(rq("GET", { headers }), ctx())).status, 200);
       }
     });
@@ -480,9 +485,17 @@ describe("fail()", () => {
     const e = await assertError(res, 404, "station_gone");
     assert.deepEqual(e.details, { mergedInto: "s2" });
   });
-  it("an unknown code still gets a generic fixed message", async () => {
-    const e = await assertError(fail(500, "made_up_code"), 500, "made_up_code");
-    assert.ok(e.message.length > 0);
+  it("every code in api-v1 1.3 has a fixed message", async () => {
+    const doc = fs.readFileSync(path.resolve(__dirname, "../../../docs/api-v1.md"), "utf8");
+    const table = doc.slice(doc.indexOf("### 1.3"), doc.indexOf("### 1.4"));
+    const rows = [...table.matchAll(/^\| (.+?) \| \d{3} \|/gm)].map((m) => m[1]);
+    const codes = [...new Set(rows.flatMap((r) => [...r.matchAll(/`(\w+)`/g)].map((m) => m[1])))];
+    assert.equal(codes.length, 17, `parsed ${codes.join(", ")}`);
+    for (const code of codes) await assertError(fail(400, code as Parameters<typeof fail>[1]), 400, code);
+  });
+  it("an invented code does not compile (checked by tsc --noEmit, which includes this file)", () => {
+    // @ts-expect-error made_up_code is not in api-v1 1.3
+    assert.ok(() => fail(500, "made_up_code"));
   });
 });
 
@@ -531,6 +544,16 @@ describe("error handling: a throw is a generic 500", () => {
     const before = spy.mock.callCount();
     await boom(new Error("x"))(rq("GET"), ctx());
     assert.ok(spy.mock.callCount() > before);
+  });
+
+  it("the log carries the path only: no search text or coordinates from the query (api-v1 1.9)", async () => {
+    const spy = console.error as unknown as ReturnType<typeof mock.method>;
+    const before = spy.mock.callCount();
+    const req = new NextRequest(`${URL_}?q=${CANARY}&lat=12.34`, { headers: { "x-forwarded-for": nextIp() } });
+    await assertError(await boom(new Error("x"))(req, ctx()), 500, "internal");
+    const logged = spy.mock.calls.slice(before).flatMap((c) => c.arguments.map((a) => inspect(a)));
+    assert.ok(logged.some((s) => s.includes("/api/v1/x")), "the path is logged");
+    for (const s of logged) assert.ok(!s.includes(CANARY) && !s.includes("12.34"), `query reached the log: ${s}`);
   });
 
   it("a handler's own non-error responses pass through untouched", async () => {
@@ -600,11 +623,20 @@ describe("rate limiting (api-v1 1.7, ADR-0009)", () => {
     setEnv("RATE_LIMIT_IP_PER_MIN", undefined);
   });
 
-  it("the limit comes from RATE_LIMIT_IP_PER_MIN; an invalid value falls back to the default 120", async () => {
-    setEnv("RATE_LIMIT_IP_PER_MIN", "not-a-number");
-    const ip = nextIp();
-    for (let i = 0; i < 120; i++) assert.equal((await none(rq("GET", { ip }), ctx())).status, 200, `request ${i + 1}`);
-    await assert429(await none(rq("GET", { ip }), ctx()));
+  it("IPv6 shares one IP bucket per /64; another /64 is unaffected", async () => {
+    setEnv("RATE_LIMIT_IP_PER_MIN", "1");
+    await none(rq("GET", { ip: "2001:db8:aa:1::1" }), ctx());
+    await assert429(await none(rq("GET", { ip: "2001:db8:aa:1:ffff:ffff:ffff:ffff" }), ctx()));
+    assert.equal((await none(rq("GET", { ip: "2001:db8:aa:2::1" }), ctx())).status, 200);
+  });
+
+  it("the limit comes from RATE_LIMIT_IP_PER_MIN; an unusable value falls back to the default 120", async () => {
+    for (const v of ["not-a-number", "0", "-5", "Infinity"]) {
+      setEnv("RATE_LIMIT_IP_PER_MIN", v);
+      const ip = nextIp();
+      for (let i = 0; i < 120; i++) assert.equal((await none(rq("GET", { ip }), ctx())).status, 200, `${v}: request ${i + 1}`);
+      await assert429(await none(rq("GET", { ip }), ctx()));
+    }
   });
 
   it("user bucket: counts per user across requests, other users unaffected", async () => {
@@ -640,10 +672,16 @@ describe("rate limiting (api-v1 1.7, ADR-0009)", () => {
     assert.equal((await asUser(rq("GET"), ctx())).status, 200, "reads are not write-limited");
   });
 
-  it("write bucket default is 20 per minute, user default 120", async () => {
+  it("write bucket default is 20 per minute", async () => {
     await signInAs(freshUser());
     for (let i = 0; i < 20; i++) assert.equal((await asUser(rq("PUT", { headers: SAME }), ctx())).status, 200, `write ${i + 1}`);
     await assert429(await asUser(rq("PUT", { headers: SAME }), ctx()));
+  });
+
+  it("user bucket default is 120 per minute", async () => {
+    await signInAs(freshUser());
+    for (let i = 0; i < 120; i++) assert.equal((await asUser(rq("GET"), ctx())).status, 200, `request ${i + 1}`);
+    await assert429(await asUser(rq("GET"), ctx()));
   });
 
   it("a refused guard does not spend the user's buckets (anonymous hits only the IP bucket)", async () => {

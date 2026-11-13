@@ -15,10 +15,21 @@ export type V1User = { id: string; email: string | null };
 const MAX_BODY = 16 * 1024;
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-const MESSAGES: Record<string, string> = {
+/** Every error code in docs/api-v1.md 1.3, each with its fixed, user-safe message. */
+const MESSAGES = {
   validation_failed: "The request is not valid.",
+  invalid_cursor: "The cursor is not valid for this request.",
+  not_available: "This option is not available yet.",
   auth_missing: "Sign in required.",
+  auth_invalid: "Your session is not valid. Sign in again.",
+  auth_expired: "Your session has expired. Sign in again.",
+  auth_revoked: "You have been signed out. Sign in again.",
+  account_deleted: "This account has been deleted.",
   forbidden: "Not allowed.",
+  not_found: "Not found.",
+  station_gone: "This station no longer exists.",
+  conflict: "The request conflicts with the current state.",
+  account_conflict: "This sign-in belongs to another account.",
   payload_too_large: "Request body is too large.",
   unsupported_media_type: "Content-Type must be application/json.",
   rate_limited: "Too many requests.",
@@ -26,9 +37,14 @@ const MESSAGES: Record<string, string> = {
 };
 
 /** Standard error envelope. `message` is always a fixed string, never derived from an error. */
-export function fail(status: number, code: string, details?: Record<string, unknown>, headers?: HeadersInit): NextResponse {
+export function fail(
+  status: number,
+  code: keyof typeof MESSAGES,
+  details?: Record<string, unknown>,
+  headers?: Record<string, string>,
+): NextResponse {
   return NextResponse.json(
-    { error: { code, message: MESSAGES[code] ?? MESSAGES.internal, ...(details ? { details } : {}) } },
+    { error: { code, message: MESSAGES[code], ...(details ? { details } : {}) } },
     { status, headers: { "Cache-Control": "no-store", ...headers } },
   );
 }
@@ -83,7 +99,11 @@ async function readCapped(req: NextRequest): Promise<Uint8Array | null> {
   return Buffer.concat(chunks);
 }
 
-const num = (name: string, dflt: number) => Number(process.env[name]) || dflt;
+/** A positive, finite limit from env; anything else (unset, junk, 0, negative, Infinity) uses `dflt`. */
+const num = (name: string, dflt: number) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : dflt;
+};
 
 export type RouteCtx<A extends AuthMode, P> = {
   req: NextRequest;

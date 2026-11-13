@@ -6,7 +6,7 @@
  */
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { clientIp, limit, setClock } from "@/lib/v1/rateLimit";
+import { clientIp, limit, setClock, windowCount } from "@/lib/v1/rateLimit";
 
 let now = 1_000_000;
 let seq = 0;
@@ -16,20 +16,14 @@ const WIN = 60_000;
 beforeEach(() => {
   now = 1_000_000;
   setClock(() => now);
-  delete process.env.TRUSTED_PROXY_HOPS;
 });
 afterEach(() => setClock());
 
 describe("limit(): fixed window", () => {
-  it("allows exactly `max` hits, then refuses, with remaining counting down", () => {
+  it("allows exactly `max` hits, then refuses", () => {
     const k = key();
-    assert.deepEqual(
-      [1, 2, 3].map(() => limit(k, 3, WIN)).map((r) => [r.ok, r.remaining, r.limit]),
-      [[true, 2, 3], [true, 1, 3], [true, 0, 3]],
-    );
-    const over = limit(k, 3, WIN);
-    assert.equal(over.ok, false);
-    assert.equal(over.remaining, 0);
+    assert.deepEqual([1, 2, 3].map(() => limit(k, 3, WIN).ok), [true, true, true]);
+    assert.equal(limit(k, 3, WIN).ok, false);
     assert.equal(limit(k, 3, WIN).ok, false, "stays refused");
   });
 
@@ -47,9 +41,7 @@ describe("limit(): fixed window", () => {
     now += WIN - 1;
     assert.equal(limit(k, 1, WIN).ok, false, "1 ms before the window ends");
     now += 1;
-    const fresh = limit(k, 1, WIN);
-    assert.equal(fresh.ok, true, "exactly at the window end it resets");
-    assert.equal(fresh.remaining, 0);
+    assert.equal(limit(k, 1, WIN).ok, true, "exactly at the window end it resets");
     assert.equal(limit(k, 1, WIN).ok, false);
   });
 
@@ -109,11 +101,12 @@ describe("limit(): memory bound (ADR-0009 'expired windows are swept')", () => {
     for (let i = 0; i < 30_000; i++) limit(`${tag}-live-${i}`, 1, 3_600_000);
     for (let i = 0; i < 15_000; i++) limit(`${tag}-short-${i}`, 1, 1_000);
     now += 31_000;
-    // 20,000 new keys: 65,000 in total unless the expired 15,000 were swept.
-    for (let i = 0; i < 20_000; i++) limit(`${tag}-new-${i}`, 1, 3_600_000);
+    // 15,000 new keys: 60,000 in total unless the expired 15,000 were swept. (Not 20,000: windows
+    // left by earlier tests are still live here, and exactly 50,000 would leave them no room.)
+    for (let i = 0; i < 15_000; i++) limit(`${tag}-new-${i}`, 1, 3_600_000);
     // If the sweep ran, nothing live was dropped; the oldest live key is still counted.
     assert.equal(limit(`${tag}-live-0`, 1, 3_600_000).ok, false, "a live key was evicted: the expired ones were not swept");
-    assert.equal(limit(`${tag}-new-19999`, 1, 3_600_000).ok, false);
+    assert.equal(limit(`${tag}-new-14999`, 1, 3_600_000).ok, false);
   });
 
   it("the 50,000-key cap holds: a flood of distinct keys drops the oldest, keeps the newest", () => {
@@ -126,12 +119,25 @@ describe("limit(): memory bound (ADR-0009 'expired windows are swept')", () => {
     assert.equal(limit(`${tag}-${N - 400}`, 1, 3_600_000).ok, false, "a key inside the newest 50,000 must be kept");
     assert.equal(limit(`${tag}-0`, 1, 3_600_000).ok, true, "oldest key must have been evicted to hold the cap");
   });
+
+  it("past the cap, eviction goes down to 90% of it (not to just under it); a renewed window counts as new", () => {
+    const tag = key();
+    now += 1_000 * 3_600_000; // past every window earlier tests left; the first call sweeps them
+    limit(`${tag}-renewed`, 1, 1_000);
+    for (let i = 0; i < 10_000; i++) limit(`${tag}-a-${i}`, 1, 3_600_000);
+    now += 2_000; // `renewed` has expired; under 30 s, so no periodic sweep removed it
+    limit(`${tag}-renewed`, 1, 3_600_000); // a new window: it now ranks with the newest keys
+    for (let i = 0; i < 40_000; i++) limit(`${tag}-b-${i}`, 1, 3_600_000);
+    // 50,001 keys at the last call: one cap sweep, which must stop at 45,000.
+    assert.ok(windowCount() <= 45_000, `${windowCount()} windows after a flood past the 50,000 cap`);
+    assert.equal(limit(`${tag}-renewed`, 1, 3_600_000).ok, false, "a renewed window was evicted by its first-insertion order");
+  });
 });
 
-describe("clientIp(): X-Forwarded-For, Nth from the right", () => {
+describe("clientIp(): the rightmost X-Forwarded-For entry", () => {
   const ip = (xff?: string) => clientIp(new Request("http://x/", xff === undefined ? {} : { headers: { "x-forwarded-for": xff } }));
 
-  it("a single proxy-appended entry", () => {
+  it("a single proxy-set entry", () => {
     assert.equal(ip("203.0.113.9"), "203.0.113.9");
   });
 
@@ -141,25 +147,22 @@ describe("clientIp(): X-Forwarded-For, Nth from the right", () => {
     assert.equal(ip("6.6.6.6,203.0.113.9"), "203.0.113.9");
   });
 
-  it("TRUSTED_PROXY_HOPS=2 takes the second from the right", () => {
-    process.env.TRUSTED_PROXY_HOPS = "2";
-    assert.equal(ip("6.6.6.6, 198.51.100.1, 203.0.113.9"), "198.51.100.1");
-  });
-
-  it("more hops than entries gives unknown (never falls back to the spoofable left)", () => {
-    process.env.TRUSTED_PROXY_HOPS = "3";
-    assert.equal(ip("198.51.100.1, 203.0.113.9"), "unknown");
-  });
-
-  it("an unusable TRUSTED_PROXY_HOPS falls back to 1", () => {
-    for (const v of ["", "abc", "0", "-2"]) {
-      process.env.TRUSTED_PROXY_HOPS = v;
-      assert.equal(ip("6.6.6.6, 203.0.113.9"), "203.0.113.9", `TRUSTED_PROXY_HOPS=${JSON.stringify(v)}`);
+  it("IPv6 is keyed by its /64: one /64 is one key, whatever the spelling", () => {
+    const key64 = "2001:db8:1:2::/64";
+    for (const a of ["2001:db8:1:2::1", "2001:db8:1:2:ffff:ffff:ffff:ffff", "2001:0DB8:0001:0002:0000:0000:0000:0001", "6.6.6.6,   2001:db8:1:2::9  "]) {
+      assert.equal(ip(a), key64, a);
     }
+    assert.notEqual(ip("2001:db8:1:3::1"), key64, "another /64 is another key");
+    assert.equal(ip("::1"), "0:0:0:0::/64");
+    assert.equal(ip("1::"), "1:0:0:0::/64");
   });
 
-  it("IPv6 and surrounding whitespace", () => {
-    assert.equal(ip("6.6.6.6,   2001:db8::1  "), "2001:db8::1");
+  it("an IPv6 zone id is dropped, so it cannot mint keys (isIP accepts one, even with a dot or ::)", () => {
+    for (const a of ["fe80::1%eth0", "fe80::2%a.b", "fe80::3%a::b"]) assert.equal(ip(a), "fe80:0:0:0::/64", a);
+  });
+
+  it("IPv4 and IPv4-mapped IPv6 are kept as they are", () => {
+    assert.equal(ip("::ffff:1.2.3.4"), "::ffff:1.2.3.4");
   });
 
   it("missing header gives unknown", () => {
@@ -168,11 +171,13 @@ describe("clientIp(): X-Forwarded-For, Nth from the right", () => {
     assert.equal(ip(" , ,"), "unknown");
   });
 
-  it("garbage in the trusted slot gives unknown, even when an earlier entry is a valid IP", () => {
+  it("garbage in the rightmost slot gives unknown, even when an earlier entry is a valid IP", () => {
     assert.equal(ip("not-an-ip"), "unknown");
     assert.equal(ip("203.0.113.9, garbage"), "unknown");
     assert.equal(ip("203.0.113.9, 999.1.1.1"), "unknown");
     assert.equal(ip("203.0.113.9, 1.2.3.4:5678"), "unknown");
+    assert.equal(ip("1.2.3.4%eth0"), "unknown");
+    assert.equal(ip("2001:db8::1::2"), "unknown");
   });
 
   it("other forwarding headers are not trusted", () => {
