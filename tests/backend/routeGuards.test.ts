@@ -40,6 +40,8 @@ import { NextRequest } from "next/server";
 delete process.env.REDIS_URL;
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
+// Every row shares the ip:unknown bucket and the IP limit runs before auth; keep 429s out of guard rows.
+process.env.RATE_LIMIT_IP_PER_MIN = "1000000";
 
 const connects = { count: 0 };
 let fetchSpy: ReturnType<typeof mock.method>;
@@ -73,6 +75,7 @@ const ROUTE_FILES: Record<string, string[]> = {
   "stations/search": ["GET"],
   sync: ["POST"], // machine route, x-sync-secret only: syncSecret.test.ts
   "auth/[...nextauth]": ["GET", "POST"], // NextAuth's own handlers
+  "v1/health": ["GET"],
 };
 const NOT_IN_CASES = new Set(["sync", "auth/[...nextauth]"]);
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -130,6 +133,11 @@ const CASES: Case[] = [
     call: () => routes["stations/search"].GET(req("/api/stations/search?q=ab")) },
   { file: "reviews", method: "GET", name: "GET /api/reviews?stationId=s1", guard: "public", db: true,
     call: () => routes.reviews.GET(req("/api/reviews?stationId=s1")) },
+  // The fake has no tagged-template $queryRaw, so here health answers 503 degraded. db: false although
+  // it runs SELECT 1: its database failure is the contract's 503 health body, not the generic 500 the
+  // "database throws" block asserts. v1/health.test.ts covers both outcomes.
+  { file: "v1/health", method: "GET", name: "GET /api/v1/health", guard: "public", db: false,
+    call: () => routes["v1/health"].GET(req("/api/v1/health")) },
 ];
 const adminCases = CASES.filter((c) => c.guard === "admin");
 const guardedCases = CASES.filter((c) => c.guard !== "public");

@@ -9,6 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test \"tests/**/*.test.{ts,tsx}\"",
+    "test:e2e": "tsx --test --test-concurrency=1 \"tests/web/**/*.e2e.ts\"",
     "sync:worker": "tsx scripts/sync-worker.ts"
   },
   "dependencies": {
@@ -21,6 +23,7 @@
     "@upstash/redis": "^1.38.0",
     "geolib": "^3.3.14",
     "ioredis": "^5.11.1",
+    "jose": "^4.15.9",
     "lucide-react": "^1.21.0",
     "next": "16.4.3",
     "next-auth": "^4.24.15",
@@ -28,6 +31,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "vaul": "^1.1.2",
+    "zod": "^4.6.7",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
