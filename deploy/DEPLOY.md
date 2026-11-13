@@ -140,12 +140,14 @@ processes the CSS during `npm run build` on the deploy VM, and a lockfile-only `
   - **Fonts:** confirm the Roboto stylesheet and fonts load with no violations.
 - **No report endpoint in V1**, per ADR-0016.
 
-## T3-02
+## T3-02: web app binds to loopback
 
-The web unit now runs `next start -H 127.0.0.1 -p 3000`, so only the reverse proxy (T3-01, Caddy) can reach it.
+The web unit now runs `npm run start -- -H 127.0.0.1 -p 3000`, so only processes on the VM (Caddy, an SSH tunnel) can reach it.
 
 - `setup-runner.sh` installs the unit files at bootstrap; `deploy.sh` does not. The repo change has no effect until someone reinstalls the unit on the VM.
-- **Do not reinstall it before T3-01 (Caddy) proxies to 127.0.0.1:3000.** Otherwise the site goes offline.
-- Install: copy `deploy/systemd/full-charge-web.service` to `/etc/systemd/system/`, run `systemctl daemon-reload`, then `systemctl restart full-charge-web`.
-- Verify: `ss -ltnp` shows `127.0.0.1:3000` (not `0.0.0.0` or `*`), and `curl http://127.0.0.1:3000/` from the VM returns 200.
+- **Do not reinstall it until T3-U5 is done and the site works through Caddy.** Caddy can already proxy to 127.0.0.1:3000 under the old bind, so install and verify Caddy first, then reinstall this unit. Re-running `setup-runner.sh` or bootstrapping a new VM counts as a reinstall: it takes effect at the next deploy's restart, and the deploy still reports success.
+- Install: `sudo install -m 0644 /opt/full-charge/deploy/systemd/full-charge-web.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart full-charge-web`
+- Verify: `sudo ss -ltnp 'sport = :3000'` must show `127.0.0.1:3000`, not `*` or `0.0.0.0`, and `curl http://127.0.0.1:3000/` from the VM must return 200.
+- To undo, reinstall a unit with `ExecStart=/usr/bin/npm run start` and repeat the steps above.
+- Once this unit is installed, the security-group rule that opens 3000 to the owner IP (see the start of this file) no longer reaches the app. Use Caddy or an SSH tunnel instead; T3-U6 closes 3000.
 - Anything on the VM that reaches the app must use `127.0.0.1`, not `localhost`. `localhost` can resolve to `::1`, which the app no longer listens on.

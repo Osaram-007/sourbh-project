@@ -10,22 +10,27 @@ const lines = unit.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.sta
 const execStarts = lines.filter((l) => /^ExecStart\s*=/.test(l));
 
 describe("full-charge-web.service bind (T3-02)", () => {
-  it("has exactly one ExecStart", () => {
+  it("has exactly one ExecStart (no empty reset line)", () => {
     assert.equal(execStarts.length, 1);
+    assert.notEqual(execStarts[0].replace(/^ExecStart\s*=\s*/, ""), "");
   });
 
-  it("runs npm run start on 127.0.0.1:3000 (long or short flags)", () => {
+  it("package.json start script is exactly next start, so the flags reach it", () => {
+    const pkg = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8"));
+    assert.equal(pkg.scripts.start, "next start");
+  });
+
+  it("runs npm run start -- -H 127.0.0.1 -p 3000", () => {
     const cmd = execStarts[0].replace(/^ExecStart\s*=\s*/, "");
     assert.match(cmd, /^\S*npm run start\s+--\s/);
-    const args = cmd.split(/\s+/);
-    const val = (names: string[]) =>
-      args.flatMap((a, i) => (names.includes(a) ? [args[i + 1]] : names.some((n) => n.startsWith("--") && a.startsWith(n + "=")) ? [a.split("=")[1]] : []));
-    assert.deepEqual(val(["-H", "--hostname"]), ["127.0.0.1"]);
-    assert.deepEqual(val(["-p", "--port"]), ["3000"]);
-    assert.doesNotMatch(cmd, /0\.0\.0\.0|::/);
+    const a = cmd.split(/\s+/);
+    assert.ok(a.includes("--"));
+    assert.deepEqual(a.slice(a.indexOf("--") + 1), ["-H", "127.0.0.1", "-p", "3000"]);
   });
 
+  // Only matters if someone switches to the standalone server.js, which reads HOSTNAME.
+  // `next start` ignores HOSTNAME, and -p beats PORT.
   it("has no HOSTNAME= or PORT= environment override", () => {
-    assert.deepEqual(lines.filter((l) => /^Environment(File)?\s*=.*\b(HOSTNAME|PORT)\s*=/.test(l)), []);
+    assert.deepEqual(lines.filter((l) => /^Environment\s*=.*\b(HOSTNAME|PORT)\s*=/.test(l)), []);
   });
 });
