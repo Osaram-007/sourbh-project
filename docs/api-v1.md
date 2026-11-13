@@ -182,7 +182,7 @@ The server sends `status: "UNKNOWN"` whenever the connector's `confidence` is no
 - `UNKNOWN` is a member of both enums and appears on station connectors whose source did not say. It never matches a filter. It never appears in a vehicle model or in a user's manual vehicle list. `connectorTypes=UNKNOWN` in a query returns 400. (The data-model change that adds these members is task T0-07.)
 - The `connectorTypes` query filter on stations is literal: `CCS2` returns only CCS2 connectors.
 
-**Vehicle compatibility (Provisional, founder confirming).** A vehicle's compatible set is the union of its model's AC and DC types (or the user's manual list), plus `TYPE2` whenever the set contains `CCS2`, because a CCS2 inlet also takes a Type 2 AC plug. The reverse never applies: a vehicle with only `TYPE2` does not match `CCS2`.
+**Vehicle compatibility.** A vehicle's compatible set is the union of its model's AC and DC types (or the user's manual list), plus `TYPE2` whenever the set contains `CCS2`, because a CCS2 inlet also takes a Type 2 AC plug. The reverse never applies: a vehicle with only `TYPE2` does not match `CCS2`.
 
 - The set is computed by the server and is never stored. It is deduplicated and its order is not significant. It is returned as `compatibleConnectorTypes` on each `GET /vehicle-models` item, and on `Vehicle` and `Vehicle.model` (section 3.11).
 - The client sends that set as the ordinary `connectorTypes` filter. A station is compatible if at least one connector has a type in the set. Connector data is never altered to make this work.
@@ -466,7 +466,7 @@ Auth: `user`. `no-store`. The write rate limit applies to mutations.
 
 **`PATCH /me`** body `{ displayName: string }` (1 to 60 characters, trimmed). Returns the same shape as `GET /me`. Errors: 422.
 
-**`DELETE /me`** erases the account. **Provisional (founder confirming).** The user's vehicles, shortlist, sessions, reviews and the reports they filed are deleted. All personal data on the user row is blanked, and the row itself is kept, anonymised. Consent records and audit entries stay linked to that row's id. Existing sessions stop working. Response 204. Errors: 401, 403.
+**`DELETE /me`** erases the account. The user's vehicles, shortlist, sessions, reviews and the reports they filed are deleted. All personal data on the user row is blanked, and the row itself is kept, anonymised. Consent records and audit entries stay linked to that row's id. Existing sessions stop working. Response 204. Errors: 401, 403.
 
 Example: `GET /api/v1/me` returns `{"id":"usr_example1","displayName":"Sample User","email":null,"phone":null,"isAdmin":false,"requiredConsents":[{"kind":"PRIVACY","version":"2030-01"}],"onboardingComplete":false}`.
 
@@ -479,7 +479,7 @@ interface Vehicle {
   id: string;
   vehicleModelId: string | null;     // a catalogue model
   connectorTypes: ConnectorType[];   // the manual set; empty when a model is used
-  compatibleConnectorTypes: ConnectorType[];   // computed, see 2.4 (Provisional)
+  compatibleConnectorTypes: ConnectorType[];   // computed, see 2.4
   nickname: string | null;           // 1 to 40 characters when set
   model?: VehicleModelSummary;       // present when vehicleModelId is set
   createdAt: string;
@@ -596,7 +596,7 @@ Example: `{"items":[{"id":"rev_example1","authorName":"Sample U.","rating":4,"co
 
 Auth: `user`. CSRF rule applies. The write rate limit applies.
 
-Body: `{ reason: "SPAM" | "ABUSIVE" | "IRRELEVANT" | "OTHER", note?: string }`. The reasons are **Provisional (founder confirming)**. `note` is plain text, at most 300 characters.
+Body: `{ reason: "SPAM" | "ABUSIVE" | "IRRELEVANT" | "OTHER", note?: string }`. `note` is plain text, at most 300 characters.
 
 Response 204. A user can report a given review once; a repeat returns 409 `conflict`. Errors: 401, 403, 404 `not_found` (unknown or hidden review), 422.
 
@@ -617,7 +617,7 @@ Returns the active catalogue. Not paginated.
     variant: string | null;
     acConnectorTypes: ConnectorType[];
     dcConnectorTypes: ConnectorType[];
-    compatibleConnectorTypes: ConnectorType[];   // computed, Provisional (2.4)
+    compatibleConnectorTypes: ConnectorType[];   // computed, see 2.4
     maxAcKw: number | null;
     maxDcKw: number | null;
     batteryKwh: number | null;
@@ -644,14 +644,14 @@ interface EnquiryRequest {
   name: string;          // required after trimming, at most 100 characters
   email: string;         // required, valid address, at most 254 characters
   organisation: string;  // optional; send "" when blank; at most 150 characters
-  type: "BUSINESS" | "OPERATOR" | "OTHER";   // Provisional, pending founder confirmation
+  type: "BUSINESS" | "OPERATOR" | "OTHER";
   message: string;       // optional; send "" when blank; at most 2000 characters
   consent: true;         // must be literally true
   website: string;       // honeypot: always "" from a real user; at most 200 characters
 }
 ```
 
-`type` is **Provisional** pending founder confirmation of the options and their labels; the server stores it as a plain string until then, so the value set may change.
+A `type` value outside the three above returns 400 with no entry for it (and no `fields` at all if nothing else failed), and the form shows its generic error.
 
 **Honeypot.** The honeypot is checked before any validation. If `website` is non-empty, the server returns exactly the same response as a real success and stores nothing. A client cannot tell the difference.
 
@@ -701,10 +701,6 @@ Response: `204`.
 
 ## 5. Open questions
 
-- **Q1 (founder).** Compatibility shape (section 2.4): `compatibleConnectorTypes` computed by the server on `GET /vehicle-models`, `Vehicle` and `Vehicle.model`, with the CCS2-implies-TYPE2 expansion on the vehicle's set. Provisional until confirmed.
-- **Q2 (founder).** `DELETE /me` retention (section 3.10): which data is deleted and which is kept on the anonymised row.
-- **Q3 (founder).** Review report reasons (section 3.16).
-- **Q4 (founder).** Enquiry `type` options and their labels (section 3.18).
 - **Q5.** The final `disclaimerKeys` and amenity key sets (section 2.6) depend on the data normaliser and wording decisions.
 - **Q6.** `Confidence` values and `ConnectorSourceStatus` (sections 2.1, 2.3) follow the availability service and may change with it.
 - **Q7.** Names of the `powerBand` values, and the status codes marked Provisional in 1.3 (`invalid_cursor`, `payload_too_large`, `unsupported_media_type`, malformed-JSON 400, the `GET /health` 503), because no decision record fixes them.
