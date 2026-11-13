@@ -354,6 +354,7 @@ describe("links from marketing pages to /app are plain <a> or prefetch={false}",
     }
     // No page uses <Link> today (the marketing group is plain <a>, ADR-0016), so the control is synthetic: the scan's own regex must see one.
     assert.ok(/<Link\b[^>]*>/.test('<Link href="/x" prefetch={false}>'), "control: the <Link> regex works");
+    assert.ok(files.length > 10, `control: the scan read ${files.length} real files`);
     void seen;
   });
 

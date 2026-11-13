@@ -55,6 +55,7 @@ describe("static CSP (marketing, legal, 404, metadata)", () => {
       assert.equal(res.headers.get(ENFORCING), null);
       const raw = res.headers.get(REPORT_ONLY);
       assert.ok(raw, `${p}: no CSP at all (status ${res.status})`);
+      assert.equal(raw.split("default-src").length, 2, `${p}: exactly one policy expected, got: ${raw}`);
       const script = parseCsp(raw).get("script-src")!;
       assert.ok(script.includes("'strict-dynamic'") && nonceOf(raw), `${p}: not the nonce policy: ${raw}`);
       assert.ok(!script.includes("'unsafe-inline'"), `${p} got the static script-src: ${raw}`);
