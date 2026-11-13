@@ -164,3 +164,23 @@ Set `ADMIN_EMAILS` in `/opt/full-charge/.env` to the owner's email before this r
 and the sync and credentials controls fail. `/api/sync` is unaffected, it uses `SYNC_SECRET_KEY`.
 
 Failure details are not sent to the admin panel or to API callers (`/api/admin/*`, `/api/sync`); read them in the service logs. Scheduled scrapes log to `full-charge-sync` (`journalctl -u full-charge-sync`), manual ones (Trigger Sync in `/admin`, `POST /api/sync`) to `full-charge-web`.
+
+## T3-01: Caddy reverse proxy
+
+`deploy/caddy/Caddyfile` implements ADR-0021: production is public except `/admin*`, `/api/admin*`, `/api/analytics*` and `/api/sync*`, which answer 404 to anyone but `OWNER_IP`; staging (127.0.0.1:3001) is owner-only and noindex; `www` redirects (301) to the apex. No script here installs Caddy.
+
+- **Install the file** at `/etc/caddy/Caddyfile`: `sudo install -m 0644 deploy/caddy/Caddyfile /etc/caddy/Caddyfile`. Run `sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy` if the package did not create the log directory. Keep the previous file as `/etc/caddy/Caddyfile.bak` first.
+- **Supply the env placeholders** with `sudo systemctl edit caddy`, adding `[Service]` and `EnvironmentFile=/etc/caddy/caddy.env`. Create that file (root-owned, mode 0600) with `SITE_DOMAIN=`, `STAGING_DOMAIN=` and `OWNER_IP=` lines (`OWNER_IP` is an IP or CIDR). Real values live only on the VM, never in the repo. DNS for the apex, `www` and staging must point at the VM, with ports 80 and 443 open, or certificate issuance fails.
+- **Validate before any reload**, with the same env the service uses: `sudo bash -c 'set -a; . /etc/caddy/caddy.env; set +a; caddy validate --config /etc/caddy/Caddyfile'`, then `sudo systemctl reload caddy`. An empty `OWNER_IP` fails validation.
+- **Order with T3-02:** install Caddy and verify the site through it first (it proxies to 127.0.0.1:3000 under the old bind too). Only then reinstall the loopback web unit (T3-02 section) and repeat the checks below.
+- **Verify.** Run the non-owner checks from a network that is not `OWNER_IP` (for example a phone on mobile data).
+  - TLS: `curl -sI https://$SITE_DOMAIN/` returns 200 with `strict-transport-security: max-age=300`.
+  - HTTP to HTTPS: `curl -sI http://$SITE_DOMAIN/` redirects to `https://`.
+  - www to apex: `curl -sI https://www.$SITE_DOMAIN/x` returns 301 to `https://$SITE_DOMAIN/x`.
+  - Blocked from a non-owner IP (expect 404): `/admin`, `/ADMIN`, `/api//admin/x`, `/%61dmin`, `/api/sync/`. From the owner IP, `/admin` loads.
+  - Staging: a non-owner gets 404 on every path; the owner gets the site with `x-robots-tag: noindex`.
+  - Logs: `sudo tail -n1 /var/log/caddy/access.log` is JSON with no `Cookie` or `Authorization`, and a request to `/?lat=1&q=x` is logged without `lat` or `q`.
+- **Raise HSTS after 7 stable days:** change `max-age=300` to `max-age=31536000` in the Caddyfile (still no `includeSubDomains`, no preload), validate, reload.
+- **Renewal check:** Caddy renews by itself. After first issuance, `sudo journalctl -u caddy | grep -i 'certificate obtained'` shows success, and `echo | openssl s_client -connect $SITE_DOMAIN:443 -servername $SITE_DOMAIN 2>/dev/null | openssl x509 -noout -enddate` shows an expiry about 60 to 90 days out. Re-check after 30 days that the expiry has moved. Ports 80 and 443 must stay reachable.
+- **Log retention** is 14 days, provisional until Q-C10 is decided.
+- **Rollback:** copy `/etc/caddy/Caddyfile.bak` back, validate, reload. To drop Caddy, `sudo systemctl disable --now caddy`. That restores direct access to port 3000 only while the web unit still has the old bind (before T3-02); after T3-02 use an SSH tunnel to 127.0.0.1:3000.

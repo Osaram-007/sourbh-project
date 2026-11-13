@@ -1,0 +1,87 @@
+# Production reverse proxy (ADR-0021, amends ADR-0007). Install at /etc/caddy/Caddyfile.
+# Env (set via caddy.service, see DEPLOY.md "T3-01"): SITE_DOMAIN, STAGING_DOMAIN, OWNER_IP.
+# OWNER_IP must be set: if empty, `caddy validate` fails, which is the safe direction.
+# Automatic HTTPS and the HTTP->HTTPS redirect are Caddy defaults and are left alone.
+#
+# No `trusted_proxies`: Caddy treats the TCP peer as the client and REPLACES any
+# client-sent X-Forwarded-For with that address (ADR-0009 reads the rightmost entry).
+# remote_ip below likewise matches the TCP peer, never a header.
+#
+# Path matching: Caddy's `path` matcher is case-insensitive, matches the percent-decoded
+# path, merges duplicate slashes and resolves dot segments before comparing. The trailing
+# `*` makes each pattern a prefix, so `/admin`, `/admin/` and `/admin/x` all match.
+
+(common) {
+	encode zstd gzip
+
+	# HSTS (WDEC-9). Start at 300 s; raise to 31536000 after 7 stable days (DEPLOY.md).
+	# No includeSubDomains, no preload: ADR-0021 says "no preload" and is silent on
+	# subdomains; staging is a sibling host and must not inherit a long pin.
+	header Strict-Transport-Security "max-age=300"
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 50MiB
+			roll_keep 14
+			# Retention is provisional, pending Q-C10 (legal decision).
+			roll_keep_for 336h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete lat
+					delete lng
+					delete bbox
+					delete q
+				}
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+				request>headers>Proxy-Authorization delete
+				resp_headers>Set-Cookie delete
+			}
+		}
+	}
+}
+
+(proxy) {
+	reverse_proxy 127.0.0.1:{args[0]} {
+		transport http {
+			# Node closes idle sockets after 5 s; never reuse one it may have closed.
+			keepalive 4s
+		}
+	}
+}
+
+{$SITE_DOMAIN} {
+	import common
+
+	@owner_only {
+		path /admin* /api/admin* /api/analytics* /api/sync*
+		not remote_ip {$OWNER_IP}
+	}
+	handle @owner_only {
+		respond 404
+	}
+	handle {
+		import proxy 3000
+	}
+}
+
+www.{$SITE_DOMAIN} {
+	import common
+	redir https://{$SITE_DOMAIN}{uri} 301
+}
+
+{$STAGING_DOMAIN} {
+	import common
+	header X-Robots-Tag noindex
+
+	@not_owner not remote_ip {$OWNER_IP}
+	handle @not_owner {
+		respond 404
+	}
+	handle {
+		import proxy 3001
+	}
+}
