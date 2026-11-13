@@ -191,3 +191,10 @@ Failure details are not sent to the admin panel or to API callers (`/api/admin/*
 - **Renewal check:** Caddy renews by itself, at about two-thirds of a 90-day certificate's life, so a check on day 30 shows nothing. After first issuance, `sudo journalctl -u caddy | grep -i 'certificate obtained'` shows success. Then check monthly that the expiry is always more than about 20 days away: `echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -enddate` (real domain). Ports 80 and 443 must stay reachable.
 - **Log retention** is 14 days (daily roll, `roll_keep_for 336h`), provisional until Q-C10 is decided.
 - **Rollback:** copy `/etc/caddy/Caddyfile.bak` back, validate, reload. To drop Caddy, `sudo systemctl disable --now caddy`. That restores direct access to port 3000 only while the web unit still has the old bind (before T3-02); after T3-02 use an SSH tunnel to 127.0.0.1:3000.
+
+## T3-04: CI tests before deploy
+
+- The `deploy` job runs only on `main` (`if: github.ref == 'refs/heads/main'`). A `workflow_dispatch` run on any other ref builds and tests, and never deploys.
+- Pushes that change only `mobile/**` or `docs/**` do not trigger the workflow, so they do not deploy. `workflow_dispatch` is unaffected.
+- The `build` job runs `npm test` against a Postgres 16 service container (throwaway CI credentials) before `npm run build`. A failing test fails `build`, which blocks `deploy`.
+- Dry-run CI on a branch: `gh workflow run deploy.yml --ref <branch>`. This builds and tests only.
