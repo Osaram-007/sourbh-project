@@ -23,7 +23,7 @@ Credentials for `user`:
 - **Session cookie.** An opaque, server-side session in an httpOnly cookie, created by `POST /session`. The cookie is `__Host-fc_session` (Secure) in deployed environments and `fc_session` on local http. The cookie value is random and never appears in a response body.
 - **Bearer token.** `Authorization: Bearer <ID token>` where the token is a Firebase ID token. Intended for the future mobile app. A request with a Bearer header does not use the cookie.
 
-Both credentials resolve to the same user context, so no endpoint behaves differently by credential, except for the CSRF rule below. A session row that is unknown or revoked returns 401 `auth_invalid`.
+Both credentials resolve to the same user context, so no endpoint behaves differently by credential, except for the CSRF rule below. For a cookie session: an unknown session row returns 401 `auth_invalid`; an expired one `auth_expired`; one created before the user's revocation time `auth_revoked`; and a deleted account `account_deleted`.
 
 Whether a user is an administrator is computed on the server on each request. It is never taken from a request field or a token claim. A client learns it only from the `isAdmin` flag on `GET /me` and in the `POST /session` response.
 
@@ -35,7 +35,7 @@ Applies to every mutating request (`POST`, `PUT`, `PATCH`, `DELETE`) authenticat
 - Otherwise the `Origin` header must equal the configured app origin.
 - If neither header is present, the request is rejected.
 - A failure returns 403 `forbidden`.
-- Bearer-authenticated requests are exempt, because they carry no ambient credential.
+- The exemption applies only to a verified Bearer token on `user` and `admin` routes, because such a request carries no ambient credential. Routes with auth mode `none` always apply the check, whatever `Authorization` header is present.
 
 ### 1.3 Errors
 
@@ -184,7 +184,7 @@ The server sends `status: "UNKNOWN"` whenever the connector's `confidence` is no
 
 **Vehicle compatibility (Provisional, founder confirming).** A vehicle's compatible set is the union of its model's AC and DC types (or the user's manual list), plus `TYPE2` whenever the set contains `CCS2`, because a CCS2 inlet also takes a Type 2 AC plug. The reverse never applies: a vehicle with only `TYPE2` does not match `CCS2`.
 
-- The set is computed by the server and is never stored. It is returned as `compatibleConnectorTypes` on each `GET /vehicle-models` item, and on `Vehicle` and `Vehicle.model` (section 3.11).
+- The set is computed by the server and is never stored. It is deduplicated and its order is not significant. It is returned as `compatibleConnectorTypes` on each `GET /vehicle-models` item, and on `Vehicle` and `Vehicle.model` (section 3.11).
 - The client sends that set as the ordinary `connectorTypes` filter. A station is compatible if at least one connector has a type in the set. Connector data is never altered to make this work.
 - Power is never compared. The server never receives the user's vehicle, so station responses stay shareable between users.
 
@@ -202,7 +202,7 @@ interface StationSummary {
   state: string | null;
   latitude: number;
   longitude: number;
-  distanceKm?: number;           // present when a centre point, or a bbox centre, applies
+  distanceKm?: number;           // present only when the request has a centre point
   availability: Availability;
   connectors: ConnectorSummary[];
   maxPowerKw: number | null;
@@ -248,7 +248,7 @@ interface Connector {
 **Provisional keys.** The client maps keys to wording; unknown keys must be ignored.
 
 - `disclaimerKeys`: `availability` (availability is indicative), `pricing` (prices may differ at the site), `hours` (hours come from the source).
-- `amenities`: lowercase keys such as `restroom`, `food`, `wifi`, `parking`, `shopping`, `lounge`. The final set is defined by the data normaliser.
+- `amenities`: the key set comes from the data normaliser (T1-04) and is Provisional.
 
 `operatorLink` appears only once an operator-app link has been configured for the station's network. Legal-page links are not in this API in v1 (deferred); the config endpoint returns versions only.
 
@@ -271,7 +271,7 @@ Unless stated, errors also include 413 and 415 for requests with a body, 429 (an
 
 Auth: `none`. Rate limit: IP bucket.
 
-Returns servable stations. Either a centre point (`lat` and `lng`) or a `bbox` is required; neither returns 400 `validation_failed`. Order is by distance then id. With a centre point, distance is from that point; with only a bbox, distance is from the box centre.
+Returns servable stations. Either a centre point (`lat` and `lng`) or a `bbox` is required; neither returns 400 `validation_failed`. Order is by distance then id. With a centre point, distance is from that point. With only a bbox, the order uses the box centre and `distanceKm` is omitted from items.
 
 Query. Names are final unless marked; `powerBand` value names are **Provisional**:
 
@@ -282,15 +282,15 @@ Query. Names are final unless marked; `powerBand` value names are **Provisional*
 | `bbox` | `west,south,east,north` | Alternative to centre and radius. Rounded outward to 0.01 degrees. |
 | `connectorTypes` | comma list of `ConnectorType` | Literal match. `UNKNOWN` returns 400. See 2.4. |
 | `current` | `AC` or `DC` | |
-| `powerBand` | comma list: `LT_7`, `7_22`, `22_50`, `50_120`, `GT_120` | Bands are under 7, 7 to 22, over 22 to 50, over 50 to 120 and over 120 kW. Upper bounds are inclusive, so 22 kW AC is in `7_22` and 50 kW DC is in `22_50`. |
-| `availability` | comma list of `AvailabilityState` | `UNKNOWN` is not accepted here. |
+| `powerBand` | comma list: `LT_7`, `7_22`, `22_50`, `50_120`, `GT_120` | Bands are under 7, 7 to 22, over 22 to 50, over 50 to 120 and over 120 kW. Upper bounds are inclusive (except `LT_7`), so 22 kW AC is in `7_22` and 50 kW DC is in `22_50`. |
+| `availableNow` | `true` | Matches stations with at least one connector whose status is `AVAILABLE`. That same connector must also satisfy `connectorTypes`, `current` and `powerBand` (for example a free 50 kW CCS2 connector). Only `true` is accepted. |
 | `networks` | comma list of network names | Values come from `GET /networks`. |
 | `maxPriceInrPerKwh` | number | Only stations with a known price can match. |
 | `amenities` | comma list of amenity keys | |
-| `sort` | `distance`, `price`, `power`, `availability` | Default `distance`. `price` ascending; `power` descending; `availability` in the order Available, Limited, Unavailable, Status unknown. Null values are always last. `rating` and `reliability` return 400 `not_available`; any other value returns 400 `validation_failed`. |
+| `sort` | `distance`, `price`, `power`, `availability` | Default `distance`. `price` ascending; `power` descending; `availability` in the order `AVAILABLE`, `LIMITED`, `UNAVAILABLE`, `UNKNOWN`. Null values are always last. `rating` and `reliability` return 400 `not_available`; any other value returns 400 `validation_failed`. |
 | `limit`, `cursor` | | See 1.5. |
 
-Connector-level filters (`connectorTypes`, `current`, `powerBand` and `availability`) must all hold on the same connector. Stations with an unknown value for an active filter are excluded and counted in `excludedUnknown`.
+Connector-level filters (`connectorTypes`, `current`, `powerBand` and `availableNow`) must all hold on the same connector. Stations with an unknown value for an active filter are excluded and counted in `excludedUnknown`.
 
 Response 200: `{ items: StationSummary[], total, excludedUnknown, nextCursor, hasMore }`.
 
@@ -440,9 +440,9 @@ Example: `POST /api/v1/session` body `{"idToken":"example-token"}` returns `{"di
 
 ### 3.9 `DELETE /session`
 
-Auth: `none`. CSRF rule applies. This is the exception to the rule that `none` routes read no credential: the route reads the session cookie, only to delete the matching session row, if any.
+Auth: `none` (amends ADR-0018, which listed this route as `user`). CSRF rule applies. This is the exception to the rule that `none` routes read no credential: the route reads the session cookie, only to delete the matching session row, if any.
 
-It always clears the session cookie and the non-sensitive "signed in" hint cookie, and always returns 204 with no body, whether or not a session existed. A Bearer caller has no session; the call is a no-op returning 204.
+It always clears the session cookie and the non-sensitive "signed in" hint cookie, and always returns 204 with no body, whether or not a session existed. Token clients (the mobile app, on hold) sign out by discarding their token and do not call this route; a call with a Bearer header is still subject to the CSRF check.
 
 Errors: 403 `forbidden` (CSRF).
 
@@ -459,7 +459,7 @@ Auth: `user`. `no-store`. The write rate limit applies to mutations.
   email: string | null;        // only if verified
   phone: string | null;
   isAdmin: boolean;
-  requiredConsents: { kind: "PRIVACY" | "TERMS"; version: string }[];  // current versions not yet accepted
+  requiredConsents: { kind: "PRIVACY" | "TERMS"; version: string }[];  // current versions not yet accepted (accepted and not withdrawn since)
   onboardingComplete: boolean; // true when requiredConsents is empty
 }
 ```
@@ -499,7 +499,7 @@ interface VehicleModelSummary {      // Provisional shape
 
 - **`GET /me/vehicles`**: `{ items: Vehicle[], total, nextCursor, hasMore }`.
 - **`POST /me/vehicles`**: body `{ vehicleModelId?: string, connectorTypes?: ConnectorType[], nickname?: string }`. Exactly one of `vehicleModelId` or a non-empty `connectorTypes` is required. The model must be active. `connectorTypes` must not contain `UNKNOWN`. Returns 201 with the `Vehicle`. A user may have at most 10 vehicles; the 11th returns 409 `conflict`.
-- **`PATCH /me/vehicles/{id}`**: any subset of the same fields. The vehicle must stay valid. Returns the `Vehicle`.
+- **`PATCH /me/vehicles/{id}`**: any subset of `vehicleModelId`, `connectorTypes` and `nickname`; each accepts `null` (`connectorTypes`: an array or `null`). Setting a model clears `connectorTypes`; setting `connectorTypes` clears the model. The vehicle must end with exactly one of the two, otherwise 400 `validation_failed`. Returns the `Vehicle`.
 - **`DELETE /me/vehicles/{id}`**: 204. The last vehicle may be deleted.
 
 A user can reach only their own vehicles; another user's id returns 404. No registration number is stored.
@@ -542,7 +542,7 @@ Auth: `user`. `no-store`.
   ```
 
   `ShortlistItem` is a `StationSummary` without `distanceKm`, plus `savedAt: string`. A station removed from the listing appears under `gone`.
-- **`PUT /me/shortlist/{stationId}`**: saves the station. Idempotent. Response 204. 404 `not_found` if the station is unknown.
+- **`PUT /me/shortlist/{stationId}`**: saves the station. Idempotent. Response 204. 404 `not_found` if the station is unknown, removed or merged.
 - **`DELETE /me/shortlist/{stationId}`**: removes it. Idempotent, 204 even if it was not saved.
 
 Public station responses never carry saved state.
@@ -690,7 +690,7 @@ Response: `204`.
 | `/stations`, `/stations/markers`, `/stations/{id}`, `/stations/{id}/reviews` | GET | none |
 | `/search`, `/networks`, `/vehicle-models` | GET | none |
 | `/session` | POST | none (ID token in body) |
-| `/session` | DELETE | none (reads the cookie to find the session) |
+| `/session` | DELETE | none (reads the cookie to find the session; amends ADR-0018, was user) |
 | `/enquiries` | POST | none |
 | `/me` | GET, PATCH, DELETE | user |
 | `/me/vehicles`, `/me/vehicles/{id}` | GET, POST, PATCH, DELETE | user |
