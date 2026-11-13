@@ -151,3 +151,16 @@ The web unit now runs `npm run start -- -H 127.0.0.1 -p 3000`, so only processes
 - To undo, reinstall a unit with `ExecStart=/usr/bin/npm run start` and repeat the steps above.
 - Once this unit is installed, the security-group rule that opens 3000 to the owner IP (see the start of this file) no longer reaches the app. Use Caddy or an SSH tunnel instead; T3-U6 closes 3000.
 - Anything on the VM that reaches the app must use `127.0.0.1`, not `localhost`. `localhost` can resolve to `::1`, which the app no longer listens on.
+
+## T0-04: admin allowlist (`ADMIN_EMAILS`)
+
+Set `ADMIN_EMAILS` in `/opt/full-charge/.env` to the owner's email before this release goes out
+(comma-separated for several; matching is case-insensitive). Admin access needs the DB role
+`ADMIN` **and** the email on this list. The web service reads `.env` at start, so restart
+`full-charge-web` after changing it.
+
+**If `ADMIN_EMAILS` is missing or empty, nobody is admin: the owner is locked out of `/admin`.**
+`/api/admin/*` and `/api/analytics/*` all return 403, so the admin pages load but show no data
+and the sync and credentials controls fail. `/api/sync` is unaffected, it uses `SYNC_SECRET_KEY`.
+
+Failure details are not sent to the admin panel or to API callers (`/api/admin/*`, `/api/sync`); read them in the service logs. Scheduled scrapes log to `full-charge-sync` (`journalctl -u full-charge-sync`), manual ones (Trigger Sync in `/admin`, `POST /api/sync`) to `full-charge-web`.

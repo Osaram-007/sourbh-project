@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth/guards";
 import { getStationBehavior, getStationReliability } from "@/services/analytics/behaviorAnalysis";
 
 /**
@@ -10,12 +9,17 @@ import { getStationBehavior, getStationReliability } from "@/services/analytics/
  * Query params:
  *   - range: "24h" | "7d" | "30d" (default: "7d")
  *   - quick: "true" to return only reliability score (for badge)
+ *
+ * Admin-only, including ?quick=true (T0-04).
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireAdmin();
+    if (!auth.ok) return auth.response;
+
     const { id } = await params;
     const { searchParams } = new URL(req.url);
     const range = searchParams.get("range") || "7d";
@@ -40,12 +44,7 @@ export async function GET(
       return NextResponse.json(reliability);
     }
 
-    // Full behavior analysis is admin-only (heavier query, only used by the admin analytics page)
-    const session = await getServerSession(authOptions);
-    if (!session || (session.user as any)?.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
-
+    // Full behavior analysis (heavier query, only used by the admin analytics page)
     const behavior = await getStationBehavior(id, range);
     if (!behavior) {
       return NextResponse.json(
